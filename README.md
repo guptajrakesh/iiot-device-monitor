@@ -108,11 +108,13 @@ diagrams and a full walkthrough of both this data-flow and the device onboarding
 
 ## Known limitations
 
-- Modbus: holding registers only (input/coil/discrete registers are accepted in the schema but not
-  yet read), and no multi-register values (e.g. a 32-bit float spanning two registers isn't decoded).
 - Modbus RTU / serial devices aren't supported — TCP only.
 - OPC-UA connects anonymously only — no username/password or certificate-based security.
 - OPC-UA is polled on the same loop as Modbus rather than using native subscriptions.
+
+Modbus itself now supports all four register types (holding/input/coil/discrete) and multi-register
+values (uint32/int32/float32 spanning two registers, with configurable byte/word order) — see
+`protocol_config` in `edge-gateway/gateway/connectors/modbus_connector.py`.
 
 ## Project layout
 
