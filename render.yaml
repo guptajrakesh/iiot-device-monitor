@@ -52,7 +52,10 @@ services:
     dockerfilePath: simulators/opcua_sim/Dockerfile
     dockerContext: simulators/opcua_sim
 
-  - type: worker
+  # Also a Web Service, not a Background Worker, for the same free-plan
+  # reason as above - it has nothing to actually serve, so gateway/main.py
+  # runs a trivial health-check listener on $PORT purely for Render's benefit.
+  - type: web
     name: iiot-edge-gateway
     runtime: docker
     plan: free

@@ -171,7 +171,36 @@ class Gateway:
             )
 
 
+async def _handle_health_check(reader, writer):
+    try:
+        await reader.read(1024)
+        body = b"OK"
+        writer.write(
+            b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: "
+            + str(len(body)).encode()
+            + b"\r\nConnection: close\r\n\r\n"
+            + body
+        )
+        await writer.drain()
+    except Exception:
+        pass
+    writer.close()
+
+
+async def _run_health_server():
+    # Some PaaS free tiers (e.g. Render) only offer the "Web Service" type on
+    # their free plan, even for something like this gateway with nothing to
+    # actually serve - this exists purely so such a platform has a port to
+    # health-check. Harmless locally: nothing publishes or depends on this port.
+    port = int(os.environ.get("PORT", "8080"))
+    server = await asyncio.start_server(_handle_health_check, "0.0.0.0", port)
+    log.info("Health-check listener on :%d (for PaaS deployments only)", port)
+    async with server:
+        await server.serve_forever()
+
+
 async def main():
+    asyncio.create_task(_run_health_server())
     gateway = Gateway()
     while True:
         try:

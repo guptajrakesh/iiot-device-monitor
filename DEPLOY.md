@@ -19,17 +19,19 @@ stop and don't enter them** — come back here and we'll figure out an alternati
 | `iiot-mosquitto` | Web Service | MQTT broker (plaintext — see note below) |
 | `iiot-modbus-sim` | Web Service | Fake Modbus device |
 | `iiot-opcua-sim` | Web Service | Fake OPC-UA device |
-| `iiot-edge-gateway` | Background Worker | Polls the simulators, publishes to MQTT |
+| `iiot-edge-gateway` | Web Service | Polls the simulators, publishes to MQTT (nothing real to serve — see note below) |
 
 The database lives outside Render entirely, on Timescale Cloud.
 
-**Note on security**: Render's free plan doesn't support Private Services, so `iiot-mosquitto`,
-`iiot-modbus-sim`, and `iiot-opcua-sim` run as Web Services instead — reachable internally by the
-other services the same way, but each also gets a public URL as a side effect. In practice this is low
-real risk: mosquitto here holds no data worth protecting and the two simulators just emit fake
-drifting numbers, but it's worth knowing they're technically public, not sealed off. The MQTT broker
-also runs without TLS (`mosquitto/Dockerfile.cloud`), unlike local `docker compose up`'s
-TLS-encrypted broker — a deliberate simplification for this deployment target.
+**Note on security**: Render's free plan supports only the Web Service type — no Private Services and
+no Background Workers — so `iiot-mosquitto`, `iiot-modbus-sim`, `iiot-opcua-sim`, and
+`iiot-edge-gateway` all run as Web Services regardless of what they actually do, each getting a public
+URL as a side effect (the gateway's "web" presence is just a trivial health-check listener added
+purely for this; it has nothing real to serve). In practice this is low real risk: mosquitto here holds
+no data worth protecting and the two simulators just emit fake drifting numbers, but it's worth knowing
+they're technically public, not sealed off. The MQTT broker also runs without TLS
+(`mosquitto/Dockerfile.cloud`), unlike local `docker compose up`'s TLS-encrypted broker — a deliberate
+simplification for this deployment target.
 
 Separately, and more importantly: **this app has no authentication anywhere**. The backend's URL,
 once deployed, is a normal public web address with zero login — anyone who has the link can
