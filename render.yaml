@@ -1,0 +1,76 @@
+services:
+  - type: web
+    name: iiot-backend
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        sync: false # paste your Timescale Cloud connection string here
+      - key: MQTT_HOST
+        fromService:
+          name: iiot-mosquitto
+          type: pserv
+          property: host
+      - key: MQTT_PORT
+        value: "1883"
+      - key: MODBUS_SIM_HOST
+        fromService:
+          name: iiot-modbus-sim
+          type: pserv
+          property: host
+      - key: OPCUA_SIM_HOST
+        fromService:
+          name: iiot-opcua-sim
+          type: pserv
+          property: host
+
+  - type: pserv
+    name: iiot-mosquitto
+    runtime: docker
+    plan: free
+    dockerfilePath: mosquitto/Dockerfile.cloud
+    dockerContext: mosquitto
+
+  - type: pserv
+    name: iiot-modbus-sim
+    runtime: docker
+    plan: free
+    dockerfilePath: simulators/modbus_sim/Dockerfile
+    dockerContext: simulators/modbus_sim
+
+  - type: pserv
+    name: iiot-opcua-sim
+    runtime: docker
+    plan: free
+    dockerfilePath: simulators/opcua_sim/Dockerfile
+    dockerContext: simulators/opcua_sim
+
+  - type: worker
+    name: iiot-edge-gateway
+    runtime: docker
+    plan: free
+    dockerfilePath: edge-gateway/Dockerfile
+    dockerContext: edge-gateway
+    envVars:
+      - key: GATEWAY_ID
+        value: edge-gateway-1
+      - key: BACKEND_HOST
+        fromService:
+          name: iiot-backend
+          type: web
+          property: host
+      - key: BACKEND_PORT
+        fromService:
+          name: iiot-backend
+          type: web
+          property: port
+      - key: MQTT_HOST
+        fromService:
+          name: iiot-mosquitto
+          type: pserv
+          property: host
+      - key: MQTT_PORT
+        value: "1883"

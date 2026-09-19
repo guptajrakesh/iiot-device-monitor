@@ -40,5 +40,9 @@ def init_db(retries: int = 10, delay_seconds: float = 3):
             time.sleep(delay_seconds)
 
     with engine.connect() as conn:
+        # The local Docker image pre-enables this extension; a hosted Postgres
+        # (e.g. Timescale Cloud) generally does too, but enabling it explicitly
+        # here means init_db() doesn't depend on that assumption holding.
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS timescaledb;"))
         conn.execute(text("SELECT create_hypertable('readings', 'time', if_not_exists => TRUE);"))
         conn.commit()

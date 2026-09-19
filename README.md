@@ -7,6 +7,9 @@ alert rules.
 
 No real hardware is required to run this — two simulators stand in for an OPC-UA and a Modbus device.
 
+Want it running somewhere other than your own machine? See [DEPLOY.md](DEPLOY.md) for a free
+Render + Timescale Cloud deployment (no credit card required for either, as of this writing).
+
 ## Prerequisites
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (with Docker Compose v2, included by default)

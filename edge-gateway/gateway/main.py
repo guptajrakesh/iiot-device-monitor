@@ -17,7 +17,14 @@ log = logging.getLogger("edge-gateway")
 CONNECTOR_TYPES = {"modbus": ModbusConnector, "opcua": OpcUaConnector}
 
 GATEWAY_ID = os.environ.get("GATEWAY_ID", "edge-gateway-1")
-BACKEND_URL = os.environ.get("BACKEND_URL", "http://backend:8000")
+# BACKEND_HOST/PORT (split) take priority over BACKEND_URL when set - some hosting
+# platforms (e.g. Render's Blueprint env-var linking) can only inject one property
+# (host or port) per variable, not a pre-assembled URL.
+_BACKEND_HOST = os.environ.get("BACKEND_HOST")
+if _BACKEND_HOST:
+    BACKEND_URL = f"http://{_BACKEND_HOST}:{os.environ.get('BACKEND_PORT', '8000')}"
+else:
+    BACKEND_URL = os.environ.get("BACKEND_URL", "http://backend:8000")
 MQTT_HOST = os.environ.get("MQTT_HOST", "mosquitto")
 MQTT_PORT = int(os.environ.get("MQTT_PORT", "8883"))
 MQTT_CA_CERT = os.environ.get("MQTT_CA_CERT", "/certs/ca.crt")

@@ -3,6 +3,8 @@ each of the two simulators, so `docker compose up` shows live data with no
 manual setup. Also doubles as the reference example for how onboarding via
 the API is meant to work (see README.md).
 """
+import os
+
 from sqlalchemy.orm import Session
 
 from .models import (
@@ -20,6 +22,12 @@ SITE_ID = "site-demo"
 GATEWAY_ID = "edge-gateway-1"
 MODBUS_TEMPLATE_ID = "tmpl-modbus-pump"
 OPCUA_TEMPLATE_ID = "tmpl-opcua-pumpstation"
+
+# Overridable so a deployment where these simulators aren't reachable by the
+# Docker Compose service names (e.g. separate services on a PaaS) can point
+# the seeded demo devices at wherever they actually landed.
+MODBUS_SIM_HOST = os.environ.get("MODBUS_SIM_HOST", "modbus-sim")
+OPCUA_SIM_HOST = os.environ.get("OPCUA_SIM_HOST", "opcua-sim")
 
 
 def seed_if_empty(session: Session):
@@ -98,7 +106,7 @@ def seed_if_empty(session: Session):
         id="device-modbus-pump-1",
         org_id=ORG_ID, site_id=SITE_ID, gateway_id=GATEWAY_ID, template_id=modbus_template.id,
         name="Pump 1 (Modbus)", protocol="modbus",
-        connection_config={"host": "modbus-sim", "port": 502, "unit_id": 1},
+        connection_config={"host": MODBUS_SIM_HOST, "port": 502, "unit_id": 1},
         poll_interval_seconds=1.0, status="active",
     )
     session.add(modbus_instance)
@@ -116,7 +124,7 @@ def seed_if_empty(session: Session):
         org_id=ORG_ID, site_id=SITE_ID, gateway_id=GATEWAY_ID, template_id=opcua_template.id,
         name="Pump Station 1 (OPC-UA)", protocol="opcua",
         connection_config={
-            "endpoint": "opc.tcp://opcua-sim:4840/freeopcua/server/",
+            "endpoint": f"opc.tcp://{OPCUA_SIM_HOST}:4840/freeopcua/server/",
             "browse_name": "PumpStation1",
         },
         poll_interval_seconds=1.0, status="active",
