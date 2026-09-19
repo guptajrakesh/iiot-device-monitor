@@ -1,0 +1,536 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IIoT Device Monitor — Walkthrough</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #f2f3f0;
+    --paper-raised: #ffffff;
+    --ink: #1a1d1f;
+    --ink-dim: #5c6167;
+    --ink-faint: #90948f;
+    --line: #d8dad4;
+    --line-strong: #b9bcb4;
+    --accent: #c96a1a;
+    --accent-ink: #7a3f0e;
+    --accent-tint: #f4e3d1;
+    --good: #2f8a5b;
+    --critical: #b23b3b;
+    --font-display: 'Barlow Condensed', 'Arial Narrow', sans-serif;
+    --font-body: 'Public Sans', -apple-system, 'Segoe UI', sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #16181a; --paper-raised: #1f2224; --ink: #e8e9e6; --ink-dim: #9ba0a0; --ink-faint: #6b706f;
+      --line: #2c302f; --line-strong: #3d413f; --accent: #e0873a; --accent-ink: #f3b579; --accent-tint: #3a2a18;
+      --good: #4ade80; --critical: #f0817e;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #16181a; --paper-raised: #1f2224; --ink: #e8e9e6; --ink-dim: #9ba0a0; --ink-faint: #6b706f;
+    --line: #2c302f; --line-strong: #3d413f; --accent: #e0873a; --accent-ink: #f3b579; --accent-tint: #3a2a18;
+    --good: #4ade80; --critical: #f0817e;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--paper); color: var(--ink); font-family: var(--font-body);
+    margin: 0; padding-inline: 20px; line-height: 1.55; font-size: 16px;
+  }
+  h1, h2, h3 { font-family: var(--font-display); font-weight: 700; text-wrap: balance; letter-spacing: 0.01em; margin: 0; }
+  p { margin: 0 0 1rem; color: var(--ink); }
+  a { color: var(--accent-ink); }
+  code, .mono { font-family: var(--font-mono); font-size: 0.88em; }
+
+  .wrap { max-width: 700px; margin: 0 auto; }
+  .wrap-wide { max-width: 900px; margin: 0 auto; }
+
+  .topbar {
+    position: sticky; top: 0; z-index: 20;
+    background: var(--paper); border-bottom: 1px solid var(--line);
+    margin-inline: -20px; padding: 0.7rem 20px;
+    display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
+  }
+  .topbar .brand { font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; letter-spacing: 0.02em; }
+  .topbar .brand .dot { color: var(--accent); }
+  .topbar nav { display: flex; gap: 1.1rem; flex-wrap: wrap; }
+  .topbar nav a {
+    font-family: var(--font-display); font-weight: 600; font-size: 0.82rem; text-transform: uppercase;
+    letter-spacing: 0.05em; color: var(--ink-dim); text-decoration: none;
+  }
+  .topbar nav a:hover { color: var(--accent-ink); }
+  .topbar .back { font-size: 0.8rem; color: var(--ink-dim); text-decoration: none; }
+  .topbar .back:hover { color: var(--accent-ink); }
+
+  .hero { padding: 2.6rem 0 1.6rem; }
+  .eyebrow {
+    font-family: var(--font-display); font-weight: 600; font-size: 0.8rem; text-transform: uppercase;
+    letter-spacing: 0.12em; color: var(--accent-ink); margin-bottom: 0.6rem;
+  }
+  .hero h1 { font-size: clamp(2.1rem, 5vw, 3rem); line-height: 1.05; margin-bottom: 0.9rem; }
+  .hero .lede { font-size: 1.08rem; color: var(--ink-dim); max-width: 640px; margin-bottom: 1.6rem; }
+
+  .specsheet {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1px;
+    background: var(--line); border: 1px solid var(--line); border-radius: 4px; overflow: hidden;
+  }
+  .specsheet div { background: var(--paper-raised); padding: 0.7rem 0.9rem; }
+  .specsheet .k {
+    font-family: var(--font-display); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--ink-faint); margin-bottom: 0.2rem;
+  }
+  .specsheet .v { font-size: 0.92rem; font-weight: 500; }
+
+  section { padding: 2.6rem 0; border-top: 1px solid var(--line); }
+  .section-head { display: flex; align-items: baseline; gap: 0.8rem; margin-bottom: 1.3rem; }
+  .section-head .num {
+    font-family: var(--font-mono); font-size: 0.85rem; color: var(--accent-ink); border: 1px solid var(--line-strong);
+    border-radius: 3px; padding: 0.1rem 0.4rem;
+  }
+  .section-head h2 { font-size: 1.7rem; }
+  .section-sub { color: var(--ink-dim); max-width: 620px; margin-bottom: 1.5rem; }
+
+  figure { margin: 0 0 1.6rem; }
+  .diagram-frame { background: var(--paper-raised); border: 1px solid var(--line); border-radius: 8px; padding: 1rem; overflow-x: auto; }
+  .diagram-frame svg { display: block; margin: 0 auto; min-width: 620px; width: 100%; max-width: 980px; height: auto; color: var(--ink); }
+  figcaption { font-size: 0.86rem; color: var(--ink-dim); margin-top: 0.6rem; max-width: 640px; }
+  figcaption strong { color: var(--ink); }
+
+  .feature { display: grid; grid-template-columns: minmax(0,1fr); gap: 0.4rem; margin-bottom: 1.6rem; }
+  .feature h3 { font-size: 1.15rem; font-weight: 600; }
+  .feature p { color: var(--ink-dim); margin-bottom: 0; }
+  .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.5rem 2rem; margin-top: 1.5rem; }
+
+  .mock-card { background: var(--paper-raised); border: 1px solid var(--line); border-radius: 8px; padding: 0.9rem 1.1rem; max-width: 320px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+  .mock-card .mh { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+  .mock-card .mh .name { font-weight: 600; font-size: 0.95rem; }
+  .mock-card .mh .live { display: flex; align-items: center; gap: 0.3rem; font-size: 0.72rem; color: var(--good); }
+  .mock-card .mh .live .d { width: 6px; height: 6px; border-radius: 50%; background: var(--good); }
+  .mock-tag { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 0.6rem; padding: 0.4rem 0; border-top: 1px solid var(--line); font-size: 0.84rem; }
+  .mock-tag .tk { font-family: var(--font-mono); color: var(--ink-dim); font-size: 0.78rem; }
+  .mock-tag .tv { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .mock-tag svg { width: 46px; height: 18px; }
+
+  .logblock {
+    background: var(--paper-raised); border: 1px solid var(--line); border-left: 3px solid var(--accent);
+    border-radius: 0 6px 6px 0; padding: 0.9rem 1.1rem; font-family: var(--font-mono); font-size: 0.82rem;
+    overflow-x: auto; white-space: pre; color: var(--ink);
+  }
+  .logblock .lvl-warn { color: var(--accent-ink); }
+  .logblock .lvl-crit { color: var(--critical); }
+
+  .steps { list-style: none; margin: 0; padding: 0; counter-reset: step; }
+  .steps li { counter-increment: step; display: grid; grid-template-columns: 2.2rem 1fr; gap: 0.9rem; padding: 0.9rem 0; border-top: 1px solid var(--line); }
+  .steps li:first-child { border-top: none; }
+  .steps li::before {
+    content: counter(step); font-family: var(--font-mono); font-size: 0.85rem; color: var(--accent-ink);
+    border: 1px solid var(--line-strong); border-radius: 50%; width: 1.9rem; height: 1.9rem;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .steps .st-title { font-weight: 600; margin-bottom: 0.2rem; }
+  .steps .st-body { color: var(--ink-dim); font-size: 0.92rem; }
+  .steps .st-body code { background: var(--accent-tint); color: var(--accent-ink); padding: 0.05rem 0.35rem; border-radius: 3px; }
+
+  .tblwrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+  th, td { text-align: left; padding: 0.55rem 0.8rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-family: var(--font-display); font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-faint); }
+  td .mono { color: var(--ink-dim); }
+
+  .roadmap { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.5rem; }
+  .roadmap-col h3 { font-size: 1rem; margin-bottom: 0.7rem; display: flex; align-items: center; gap: 0.5rem; }
+  .roadmap-col.built h3 { color: var(--good); }
+  .roadmap-col.next h3 { color: var(--accent-ink); }
+  .roadmap ul { margin: 0; padding: 0; list-style: none; }
+  .roadmap li { padding: 0.5rem 0; border-top: 1px solid var(--line); font-size: 0.92rem; }
+  .roadmap li:first-child { border-top: none; }
+  .roadmap li .mono { display: block; font-size: 0.76rem; color: var(--ink-faint); margin-top: 0.15rem; }
+
+  footer { padding: 2rem 0 3rem; color: var(--ink-faint); font-size: 0.82rem; border-top: 1px solid var(--line); }
+  footer .mono { color: var(--ink-faint); }
+
+  @media (max-width: 480px) {
+    .topbar nav { display: none; }
+    .hero h1 { font-size: 2rem; }
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap-wide">
+  <div class="topbar">
+    <div class="brand">IIoT Device Monitor<span class="dot">.</span></div>
+    <nav>
+      <a href="#flow">Data Flow</a>
+      <a href="#onboarding">Onboarding</a>
+      <a href="#dashboard">Dashboard</a>
+      <a href="#alerts">Alerts</a>
+      <a href="#start">Getting Started</a>
+      <a href="#roadmap">Roadmap</a>
+    </nav>
+    <a class="back" href="/">&larr; Back to app</a>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="hero">
+    <div class="eyebrow">Walkthrough</div>
+    <h1>IIoT Device Monitor</h1>
+    <p class="lede">A real-time status app for industrial devices onboarded over OPC-UA or Modbus — an
+      edge gateway reads them on-site, a cloud backend stores and evaluates the readings, and a live
+      dashboard shows what's happening right now. This page walks through how it fits together and how
+      to use it.</p>
+    <div class="specsheet">
+      <div><div class="k">Protocols</div><div class="v">OPC-UA · Modbus TCP</div></div>
+      <div><div class="k">Transport</div><div class="v">MQTT, outbound-only + TLS</div></div>
+      <div><div class="k">Storage</div><div class="v">TimescaleDB</div></div>
+      <div><div class="k">Live path</div><div class="v">WebSocket push</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="wrap-wide">
+
+<section id="flow">
+  <div class="wrap">
+    <div class="section-head"><span class="num">01</span><h2>How a reading gets from a device to the dashboard</h2></div>
+    <p class="section-sub">OPC-UA and Modbus devices normally sit on an isolated plant network, not reachable
+      from the internet. The gateway is the only thing that talks to them directly — everything past it
+      only ever receives what the gateway chooses to send.</p>
+  </div>
+
+  <figure>
+    <div class="diagram-frame">
+      <svg viewBox="0 0 980 400" role="img" aria-label="Data flows from a device through the edge gateway, over an outbound-only MQTT connection, into the ingest service, which writes to TimescaleDB, pushes live updates over a WebSocket to the dashboard, and evaluates alert rules that notify on breach.">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+          </marker>
+          <marker id="arrow-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/>
+          </marker>
+        </defs>
+
+        <g font-family="Public Sans, sans-serif" fill="currentColor">
+          <rect x="10" y="30" width="140" height="64" rx="6" fill="none" stroke="currentColor" stroke-width="1.3"/>
+          <text x="80" y="56" text-anchor="middle" font-size="13" font-weight="600">Device</text>
+          <text x="80" y="74" text-anchor="middle" font-size="10.5" fill="currentColor" opacity="0.65">OPC-UA / Modbus</text>
+
+          <rect x="200" y="30" width="150" height="64" rx="6" fill="none" stroke="currentColor" stroke-width="1.3"/>
+          <text x="275" y="56" text-anchor="middle" font-size="13" font-weight="600">Edge Gateway</text>
+          <text x="275" y="74" text-anchor="middle" font-size="10.5" opacity="0.65">on-site</text>
+
+          <rect x="400" y="30" width="140" height="64" rx="6" fill="none" stroke="currentColor" stroke-width="1.3"/>
+          <text x="470" y="56" text-anchor="middle" font-size="13" font-weight="600">MQTT Broker</text>
+          <text x="470" y="74" text-anchor="middle" font-size="10.5" opacity="0.65">mosquitto</text>
+
+          <rect x="590" y="30" width="150" height="64" rx="6" fill="none" stroke="currentColor" stroke-width="1.3"/>
+          <text x="665" y="56" text-anchor="middle" font-size="13" font-weight="600">Ingest Service</text>
+          <text x="665" y="74" text-anchor="middle" font-size="10.5" opacity="0.65">backend</text>
+
+          <rect x="790" y="30" width="180" height="64" rx="6" fill="none" stroke="currentColor" stroke-width="1.3"/>
+          <text x="880" y="56" text-anchor="middle" font-size="13" font-weight="600">TimescaleDB</text>
+          <text x="880" y="74" text-anchor="middle" font-size="10.5" opacity="0.65">durable storage</text>
+        </g>
+
+        <line x1="150" y1="62" x2="196" y2="62" stroke="currentColor" stroke-width="1.3" marker-end="url(#arrow)"/>
+        <text x="173" y="52" text-anchor="middle" font-size="10.5">poll</text>
+
+        <line x1="350" y1="62" x2="396" y2="62" stroke="var(--accent)" stroke-width="1.6" marker-end="url(#arrow-accent)"/>
+        <text x="373" y="46" text-anchor="middle" font-size="10.5" fill="var(--accent)" font-weight="600">publish</text>
+        <text x="373" y="15" text-anchor="middle" font-size="9.5" fill="var(--accent)">outbound</text>
+        <text x="373" y="27" text-anchor="middle" font-size="9.5" fill="var(--accent)">only, TLS</text>
+
+        <line x1="540" y1="62" x2="586" y2="62" stroke="currentColor" stroke-width="1.3" marker-end="url(#arrow)"/>
+        <text x="563" y="52" text-anchor="middle" font-size="10.5">subscribe</text>
+
+        <line x1="740" y1="62" x2="786" y2="62" stroke="currentColor" stroke-width="1.3" marker-end="url(#arrow)"/>
+        <text x="763" y="52" text-anchor="middle" font-size="10.5">insert</text>
+
+        <line x1="665" y1="94" x2="635" y2="216" stroke="currentColor" stroke-width="1.3" marker-end="url(#arrow)"/>
+        <text x="612" y="160" text-anchor="middle" font-size="10.5">broadcast</text>
+
+        <line x1="665" y1="94" x2="845" y2="216" stroke="currentColor" stroke-width="1.3" marker-end="url(#arrow)"/>
+        <text x="760" y="160" text-anchor="middle" font-size="10.5">evaluate</text>
+
+        <g font-family="Public Sans, sans-serif" fill="currentColor">
+          <rect x="560" y="220" width="150" height="60" rx="6" fill="none" stroke="currentColor" stroke-width="1.3"/>
+          <text x="635" y="245" text-anchor="middle" font-size="13" font-weight="600">WebSocket</text>
+          <text x="635" y="262" text-anchor="middle" font-size="10.5" opacity="0.65">/ws/live</text>
+
+          <rect x="770" y="220" width="160" height="60" rx="6" fill="none" stroke="currentColor" stroke-width="1.3"/>
+          <text x="850" y="245" text-anchor="middle" font-size="13" font-weight="600">Alert Rules</text>
+          <text x="850" y="262" text-anchor="middle" font-size="10.5" opacity="0.65">edge-triggered</text>
+        </g>
+
+        <line x1="635" y1="280" x2="635" y2="326" stroke="currentColor" stroke-width="1.3" marker-end="url(#arrow)"/>
+        <text x="672" y="308" text-anchor="middle" font-size="10.5">live push</text>
+
+        <line x1="850" y1="280" x2="850" y2="326" stroke="currentColor" stroke-width="1.3" marker-end="url(#arrow)"/>
+        <text x="893" y="308" text-anchor="middle" font-size="10.5">on breach</text>
+
+        <g font-family="Public Sans, sans-serif" fill="currentColor">
+          <rect x="560" y="330" width="150" height="50" rx="6" fill="none" stroke="currentColor" stroke-width="1.3"/>
+          <text x="635" y="360" text-anchor="middle" font-size="13" font-weight="600">Dashboard</text>
+
+          <rect x="770" y="330" width="160" height="50" rx="6" fill="none" stroke="currentColor" stroke-width="1.3"/>
+          <text x="850" y="360" text-anchor="middle" font-size="13" font-weight="600">Notifier (stub)</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><strong>The gateway only ever dials out.</strong> Nothing downstream can reach back into
+      the plant network — the gateway also buffers readings to local disk if the MQTT connection drops,
+      and replays them once it reconnects. The publish itself is TLS-encrypted against a locally-generated
+      CA (auto-created on first <span class="mono">docker compose up</span>, see
+      <span class="mono">mosquitto/gen-certs.sh</span>) — not just "outbound," but unreadable in transit too.</figcaption>
+  </figure>
+</section>
+
+<section id="onboarding">
+  <div class="wrap">
+    <div class="section-head"><span class="num">02</span><h2>Onboarding many devices without re-teaching the system</h2></div>
+    <p class="section-sub">A <strong>Device Template</strong> captures a device type once — its protocol
+      and full tag/register map. A <strong>Device Instance</strong> is one physical unit created from a
+      template by supplying only its connection details. The gateway picks up new instances on its own,
+      on a schedule.</p>
+  </div>
+
+  <figure>
+    <div class="diagram-frame">
+      <svg viewBox="0 0 900 320" role="img" aria-label="One Device Template fans out into three Device Instances, all assigned to one Gateway, which polls the Backend API every 15 seconds for its device list and gets back the assigned devices in return — the loop that lets new instances appear without a gateway restart.">
+        <defs>
+          <marker id="arrow2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+          </marker>
+          <marker id="arrow2-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/>
+          </marker>
+        </defs>
+
+        <g font-family="Public Sans, sans-serif" fill="currentColor">
+          <rect x="20" y="130" width="170" height="70" rx="6" fill="none" stroke="currentColor" stroke-width="1.3"/>
+          <text x="105" y="158" text-anchor="middle" font-size="13" font-weight="600">Device Template</text>
+          <text x="105" y="176" text-anchor="middle" font-size="10.5" opacity="0.65">defined once</text>
+        </g>
+
+        <line x1="190" y1="150" x2="276" y2="60" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrow2)"/>
+        <line x1="190" y1="165" x2="276" y2="165" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrow2)"/>
+        <line x1="190" y1="180" x2="276" y2="270" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrow2)"/>
+        <text x="235" y="140" text-anchor="middle" font-size="10">instantiate</text>
+
+        <g font-family="Public Sans, sans-serif" fill="currentColor">
+          <rect x="280" y="30" width="170" height="56" rx="6" fill="none" stroke="currentColor" stroke-width="1.3"/>
+          <text x="365" y="52" text-anchor="middle" font-size="12.5" font-weight="600">Device Instance</text>
+          <text x="365" y="69" text-anchor="middle" font-size="10.5" opacity="0.65">Pump 1 (Modbus)</text>
+
+          <rect x="280" y="142" width="170" height="56" rx="6" fill="none" stroke="currentColor" stroke-width="1.3"/>
+          <text x="365" y="164" text-anchor="middle" font-size="12.5" font-weight="600">Device Instance</text>
+          <text x="365" y="181" text-anchor="middle" font-size="10.5" opacity="0.65">Pump 2 (Modbus)</text>
+
+          <rect x="280" y="254" width="170" height="56" rx="6" fill="none" stroke="currentColor" stroke-width="1.3"/>
+          <text x="365" y="276" text-anchor="middle" font-size="12.5" font-weight="600">Device Instance</text>
+          <text x="365" y="293" text-anchor="middle" font-size="10.5" opacity="0.65">Pump 3 (Modbus)</text>
+        </g>
+
+        <line x1="450" y1="58" x2="536" y2="158" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrow2)"/>
+        <line x1="450" y1="170" x2="536" y2="170" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrow2)"/>
+        <line x1="450" y1="282" x2="536" y2="182" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrow2)"/>
+        <text x="495" y="145" text-anchor="middle" font-size="10">assigned to</text>
+
+        <g font-family="Public Sans, sans-serif" fill="currentColor">
+          <rect x="540" y="142" width="150" height="56" rx="6" fill="none" stroke="currentColor" stroke-width="1.3"/>
+          <text x="615" y="164" text-anchor="middle" font-size="13" font-weight="600">Gateway</text>
+          <text x="615" y="181" text-anchor="middle" font-size="10.5" opacity="0.65">edge-gateway-1</text>
+        </g>
+
+        <line x1="690" y1="160" x2="736" y2="160" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#arrow2-accent)"/>
+        <text x="713" y="148" text-anchor="middle" font-size="10" fill="var(--accent)" font-weight="600">poll /15s</text>
+
+        <line x1="736" y1="182" x2="690" y2="182" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#arrow2-accent)"/>
+        <text x="713" y="200" text-anchor="middle" font-size="10" fill="var(--accent)" font-weight="600">device list</text>
+
+        <g font-family="Public Sans, sans-serif" fill="currentColor">
+          <rect x="740" y="142" width="140" height="56" rx="6" fill="none" stroke="currentColor" stroke-width="1.3"/>
+          <text x="810" y="164" text-anchor="middle" font-size="13" font-weight="600">Backend API</text>
+          <text x="810" y="181" text-anchor="middle" font-size="9.5" opacity="0.65">/gateways/:id/config</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><strong>New instances go live within one poll cycle.</strong> Onboard a device through
+      the API or bulk-CSV upload and the gateway starts reading it on its own — no redeploy, no restart.</figcaption>
+  </figure>
+
+  <div class="feature-grid">
+    <div class="feature">
+      <h3>Single device</h3>
+      <p>Pick a template, fill in the connection details (host/port/unit ID, or an OPC-UA endpoint),
+        run <strong>Test Connection</strong> for a live read before saving, then onboard.</p>
+    </div>
+    <div class="feature">
+      <h3>Bulk CSV</h3>
+      <p>One template, many rows — <code>device_name, host_or_endpoint, port, unit_id_or_node_prefix</code>.
+        Every row is validated independently, so one bad IP doesn't block the rest of the batch.</p>
+    </div>
+    <div class="feature">
+      <h3>Custom devices</h3>
+      <p>No matching template yet? Define tags inline for a one-off device, and optionally save it as a
+        template afterward for reuse.</p>
+    </div>
+  </div>
+</section>
+
+<section id="dashboard">
+  <div class="section-head"><span class="num">03</span><h2>The Live Dashboard</h2></div>
+  <p class="section-sub">Four running totals up top, then one card per device. Cards carry a sparkline per
+    tag built from a rolling in-browser history, a quality dot, and a health state that degrades to
+    <strong>Stale</strong> on its own after 8 seconds without a reading — not just when a value looks wrong.</p>
+
+  <div class="feature-grid" style="align-items:start;">
+    <div class="feature">
+      <h3>Reading a card</h3>
+      <p>Protocol badge top-left (Modbus / OPC-UA), overall health top-right. Each row below is one tag:
+        name, trend, current value.</p>
+    </div>
+    <div>
+      <div class="mock-card">
+        <div class="mh"><span class="name">Pump 1 (Modbus)</span><span class="live"><span class="d"></span>Online</span></div>
+        <div class="mock-tag">
+          <span class="tk">temperature_c</span>
+          <svg viewBox="0 0 46 18"><polyline points="0,12 8,9 16,11 24,6 32,8 46,4" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round"/></svg>
+          <span class="tv">23.4</span>
+        </div>
+        <div class="mock-tag">
+          <span class="tk">pressure_kpa</span>
+          <svg viewBox="0 0 46 18"><polyline points="0,6 8,10 16,7 24,11 32,9 46,13" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round"/></svg>
+          <span class="tv">1004.2</span>
+        </div>
+        <div class="mock-tag">
+          <span class="tk">run_hours</span>
+          <svg viewBox="0 0 46 18"><polyline points="0,15 12,11 24,8 36,5 46,2" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round"/></svg>
+          <span class="tv">2,459</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="feature" style="margin-top:1.6rem;">
+    <h3>Beyond the sparkline: real history</h3>
+    <p>The sparkline only shows what's accumulated in the browser since the page loaded. Click any tag
+      row and it opens a chart backed by <span class="mono">GET /api/readings/history</span>, which uses
+      TimescaleDB's <span class="mono">time_bucket()</span> to downsample on the way out — 1-minute buckets
+      for the last hour, up to 2-hour buckets for the last week — so a 7-day view stays a few hundred
+      points instead of everything TimescaleDB has stored. Range buttons: <strong>1h · 6h · 24h · 7d</strong>.</p>
+  </div>
+</section>
+
+<section id="alerts">
+  <div class="section-head"><span class="num">04</span><h2>Thresholds, alerts, and notifications</h2></div>
+  <p class="section-sub">A rule watches one tag on one device. It fires once on the transition into
+    breach and clears once on the transition back — not once per reading — so a sustained breach doesn't
+    flood the feed.</p>
+
+  <div class="feature-grid" style="grid-template-columns: 1.1fr 1fr;">
+    <div class="feature">
+      <h3>Example rule</h3>
+      <p><span class="mono">device-modbus-pump-1 / temperature_c &gt; 85</span>, severity <strong>Critical</strong>.
+        The moment a reading crosses 85°C, one <span class="mono">AlertEvent</span> is created, pushed live
+        to every open dashboard, and handed to the notifier. It stays active — and visible — until a later
+        reading drops back at or below 85°C.</p>
+    </div>
+    <div>
+      <div class="logblock">[STUB EMAIL -> ops-team@example.com]
+<span class="lvl-crit">[CRITICAL]</span> device-modbus-pump-1 / temperature_c
+&gt; 85.0 (current value: 91.4)
+
+[STUB SMS -> +15555550100]
+<span class="lvl-crit">[CRITICAL]</span> device-modbus-pump-1 / temperature_c
+&gt; 85.0 (current value: 91.4)</div>
+    </div>
+  </div>
+
+  <p style="margin-top:1.2rem;">Email and SMS delivery are stubbed — logged in this exact shape rather
+    than sent — until a real provider is configured. Wiring up Twilio or SMTP/SendGrid later means filling
+    in two functions in <span class="mono">notifier.py</span>; nothing else in the pipeline changes.</p>
+</section>
+
+<section id="start">
+  <div class="section-head"><span class="num">05</span><h2>Getting started</h2></div>
+  <ol class="steps">
+    <li><div><div class="st-title">Bring the stack up</div><div class="st-body">From the project root:
+      <code>docker compose up --build</code>. This starts the two device simulators, the MQTT broker,
+      TimescaleDB, the backend, and the edge gateway.</div></div></li>
+    <li><div><div class="st-title">Open the dashboard</div><div class="st-body">
+      <code>http://localhost:8000</code> — seeded with a demo org, one gateway, and the two devices below,
+      already streaming.</div></div></li>
+    <li><div><div class="st-title">Look at what's already onboarded</div><div class="st-body">The
+      <strong>Devices</strong> tab lists every instance; <strong>View</strong> shows its full tag map and
+      connection config.</div></div></li>
+    <li><div><div class="st-title">Onboard one more</div><div class="st-body">From the <strong>Device
+      Templates</strong> tab, or straight from <strong>Devices → Onboard Device</strong> using a template
+      already on file.</div></div></li>
+    <li><div><div class="st-title">Set a threshold</div><div class="st-body">In <strong>Alerts</strong>,
+      pick a device and tag, choose a condition and threshold, and save — it takes effect on the next
+      reading.</div></div></li>
+  </ol>
+
+  <div class="tblwrap" style="margin-top:1.8rem;">
+    <table>
+      <thead><tr><th>Seeded device</th><th>Protocol</th><th>Tags</th></tr></thead>
+      <tbody>
+        <tr><td>Pump 1 (Modbus)</td><td>Modbus TCP</td><td class="mono">temperature_c, pressure_kpa, run_hours</td></tr>
+        <tr><td>Pump Station 1 (OPC-UA)</td><td>OPC-UA</td><td class="mono">temperature_c, vibration_mm_s, running_status</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="roadmap">
+  <div class="section-head"><span class="num">06</span><h2>Built, and what's next</h2></div>
+  <div class="roadmap">
+    <div class="roadmap-col built">
+      <h3>✓ Built &amp; verified</h3>
+      <ul>
+        <li>Modbus + OPC-UA edge connectors, polled from a single gateway loop
+          <span class="mono">edge-gateway/gateway/connectors/</span></li>
+        <li>Local buffering + replay on broker disconnect</li>
+        <li>Device Template / Instance onboarding, single + bulk CSV, live Test Connection</li>
+        <li>Gateway hot-reload via config polling — no restart to onboard</li>
+        <li>Live dashboard: KPIs, sparklines, staleness detection, search/filter</li>
+        <li>Threshold alert rules, edge-triggered lifecycle, live event feed, acknowledge</li>
+        <li>Stubbed email/SMS notification path</li>
+        <li>MQTT encrypted end-to-end with TLS
+          <span class="mono">self-signed local CA, auto-generated on first run</span></li>
+        <li>Historical trend charts backed by TimescaleDB
+          <span class="mono">time_bucket() downsampling, 1h/6h/24h/7d</span></li>
+      </ul>
+    </div>
+    <div class="roadmap-col next">
+      <h3>→ Not built yet</h3>
+      <ul>
+        <li>Authentication &amp; authorization
+          <span class="mono">every endpoint is open - by far the biggest gap</span></li>
+        <li>Real email/SMS delivery
+          <span class="mono">needs a Twilio / SMTP account</span></li>
+        <li>OPC-UA native subscriptions (currently polled on the same loop as Modbus)</li>
+        <li>Modbus RTU / serial support</li>
+        <li>Multi-tenant auth &amp; org management screens</li>
+        <li>Rate-of-change alert conditions (only static thresholds today)</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<footer>
+  Project: <span class="mono">IIoT-DeviceMonitor</span> · Base design: <span class="mono">.claude/plans/iiot-device-monitoring-app.md</span> ·
+  Onboarding design: <span class="mono">.claude/plans/can-i-sell-this-virtual-emerson.md</span>
+</footer>
+
+</div>
+</body>
+</html>

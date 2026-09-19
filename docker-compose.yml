@@ -1,0 +1,72 @@
+services:
+  cert-init:
+    image: alpine:3.20
+    volumes:
+      - mqtt_certs:/certs
+      - ./mosquitto/gen-certs.sh:/gen-certs.sh:ro
+    entrypoint: ["sh", "/gen-certs.sh"]
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    depends_on:
+      cert-init:
+        condition: service_completed_successfully
+    ports: ["8883:8883"]
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - mqtt_certs:/mosquitto/certs:ro
+
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    environment:
+      POSTGRES_USER: iiot
+      POSTGRES_PASSWORD: iiot
+      POSTGRES_DB: iiot
+    ports: ["5432:5432"]
+    volumes:
+      - timescale_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U iiot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  modbus-sim:
+    build: ./simulators/modbus_sim
+    ports: ["5020:502"]
+
+  opcua-sim:
+    build: ./simulators/opcua_sim
+    ports: ["4840:4840"]
+
+  backend:
+    build: ./backend
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql+psycopg2://iiot:iiot@timescaledb:5432/iiot
+      MQTT_HOST: mosquitto
+      MQTT_PORT: "8883"
+      MQTT_CA_CERT: /certs/ca.crt
+    volumes:
+      - mqtt_certs:/certs:ro
+    ports: ["8000:8000"]
+
+  edge-gateway:
+    build: ./edge-gateway
+    depends_on: [mosquitto, modbus-sim, opcua-sim, backend]
+    environment:
+      GATEWAY_ID: edge-gateway-1
+      BACKEND_URL: http://backend:8000
+      MQTT_HOST: mosquitto
+      MQTT_PORT: "8883"
+      MQTT_CA_CERT: /certs/ca.crt
+    volumes:
+      - mqtt_certs:/certs:ro
+
+volumes:
+  timescale_data:
+  mqtt_certs:

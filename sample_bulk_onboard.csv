@@ -1,0 +1,3 @@
+device_name,host_or_endpoint,port,unit_id_or_node_prefix
+Pump 2 (Modbus),modbus-sim,502,2
+Pump 3 (Modbus),modbus-sim,502,3

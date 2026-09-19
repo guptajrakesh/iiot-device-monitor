@@ -1,0 +1,1168 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>IIoT Device Monitor</title>
+<style>
+  :root {
+    --bg: #0b0d11;
+    --surface: #14171d;
+    --surface-2: #1a1e26;
+    --border: #262b34;
+    --border-soft: #1e222a;
+    --text: #e8eaed;
+    --text-dim: #8b919c;
+    --text-faint: #5b6270;
+    --accent: #4c8dff;
+    --accent-dim: #1f3a63;
+    --success: #34d399;
+    --success-dim: #143d2e;
+    --warning: #fbbf24;
+    --warning-dim: #4a3a10;
+    --danger: #f87171;
+    --danger-dim: #4a1f1f;
+    --modbus: #4c8dff;
+    --opcua: #b892ff;
+    --radius: 10px;
+    --shadow: 0 4px 16px rgba(0,0,0,0.28);
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+    background: var(--bg); color: var(--text); margin: 0;
+    padding: 2rem clamp(1rem, 4vw, 3rem) 3rem;
+  }
+  a { color: var(--accent); }
+
+  .app-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 1.75rem; gap: 1rem; flex-wrap: wrap; }
+  .app-header h1 { font-weight: 650; font-size: 1.5rem; margin: 0 0 0.2rem; letter-spacing: -0.01em; }
+  .app-header .sub { color: var(--text-dim); font-size: 0.88rem; }
+  .live-pill {
+    display: flex; align-items: center; gap: 0.4rem; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 999px; padding: 0.4rem 0.85rem; font-size: 0.8rem; color: var(--text-dim); white-space: nowrap;
+  }
+  .live-pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-faint); }
+  .live-pill.connected .dot { background: var(--success); box-shadow: 0 0 0 3px var(--success-dim); }
+  .live-pill.connected { color: var(--text); }
+
+  .tabs { display: flex; gap: 0.25rem; border-bottom: 1px solid var(--border); margin-bottom: 1.75rem; }
+  .tab-btn {
+    background: none; border: none; color: var(--text-dim); padding: 0.65rem 0.9rem; cursor: pointer;
+    font-size: 0.9rem; font-weight: 500; border-bottom: 2px solid transparent; margin-bottom: -1px;
+  }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--text); border-bottom-color: var(--accent); }
+  .tab-panel { max-width: 1180px; }
+
+  /* ---------- KPI row ---------- */
+  .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.9rem; margin-bottom: 1.5rem; }
+  .kpi-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 0.95rem 1.1rem;
+  }
+  .kpi-card .kpi-value { font-size: 1.6rem; font-weight: 650; letter-spacing: -0.02em; line-height: 1.2; }
+  .kpi-card .kpi-label { color: var(--text-dim); font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.04em; margin-top: 0.15rem; }
+  .kpi-card.accent-success .kpi-value { color: var(--success); }
+  .kpi-card.accent-warning .kpi-value { color: var(--warning); }
+  .kpi-card.accent-danger .kpi-value { color: var(--danger); }
+
+  /* ---------- Filter row ---------- */
+  .filter-row { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
+  .filter-row input[type="search"] { max-width: 240px; }
+  .chip-group { display: flex; gap: 0.4rem; }
+  .chip {
+    background: var(--surface); border: 1px solid var(--border); color: var(--text-dim); border-radius: 999px;
+    padding: 0.35rem 0.8rem; font-size: 0.78rem; cursor: pointer;
+  }
+  .chip.active { color: var(--text); border-color: var(--accent); background: var(--accent-dim); }
+
+  /* ---------- Device card grid ---------- */
+  .device-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1rem; }
+  .device-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 1rem 1.1rem 0.6rem; box-shadow: var(--shadow); display: flex; flex-direction: column;
+  }
+  .device-card-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 0.75rem; gap: 0.5rem; }
+  .device-name { font-weight: 600; font-size: 0.95rem; }
+  .device-meta { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.3rem; }
+  .badge {
+    display: inline-block; font-size: 0.68rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em;
+    padding: 0.15rem 0.5rem; border-radius: 5px;
+  }
+  .badge.modbus { color: var(--modbus); background: rgba(76,141,255,0.14); }
+  .badge.opcua { color: var(--opcua); background: rgba(184,146,255,0.14); }
+  .badge.warning { color: var(--warning); background: rgba(251,191,36,0.14); }
+  .badge.critical { color: var(--danger); background: rgba(248,113,113,0.14); }
+  .badge.active { color: var(--danger); background: rgba(248,113,113,0.14); }
+  .badge.resolved { color: var(--text-dim); background: rgba(139,145,156,0.12); }
+
+  .alert-banner-list { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1.25rem; }
+  .alert-banner-item {
+    display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+    background: var(--danger-dim); border: 1px solid #6b2b2b; border-radius: 8px; padding: 0.6rem 0.9rem; font-size: 0.85rem;
+  }
+  .alert-banner-item.warning { background: var(--warning-dim); border-color: #7a5a12; }
+  .alert-banner-item .msg { color: var(--text); }
+  .alert-banner-item .msg .dim { color: var(--text-dim); font-size: 0.78rem; margin-left: 0.4rem; }
+  .device-status { display: flex; align-items: center; gap: 0.4rem; font-size: 0.76rem; color: var(--text-dim); white-space: nowrap; }
+  .status-dot { display:inline-block; width:8px; height:8px; border-radius:50%; flex-shrink: 0; }
+  .status-dot.good { background: var(--success); box-shadow: 0 0 0 3px var(--success-dim); }
+  .status-dot.bad { background: var(--danger); box-shadow: 0 0 0 3px var(--danger-dim); }
+  .status-dot.stale { background: var(--warning); box-shadow: 0 0 0 3px var(--warning-dim); }
+  .status-dot.unknown { background: var(--text-faint); }
+
+  .tag-list { border-top: 1px solid var(--border-soft); }
+  .tag-line { display: grid; grid-template-columns: 1fr 56px auto; align-items: center; gap: 0.6rem; padding: 0.5rem 0.4rem; border-bottom: 1px solid var(--border-soft); cursor: pointer; border-radius: 4px; }
+  .tag-line:last-child { border-bottom: none; }
+  .tag-line:hover { background: var(--surface-2); }
+  .tag-info .tag-name { font-size: 0.82rem; color: var(--text); }
+  .tag-info .tag-time { font-size: 0.7rem; color: var(--text-faint); }
+  .tag-value { text-align: right; font-variant-numeric: tabular-nums; font-size: 0.88rem; font-weight: 600; white-space: nowrap; }
+  .tag-value .unit { font-weight: 400; color: var(--text-dim); font-size: 0.72rem; margin-left: 0.15rem; }
+  .tag-value.bad, .tag-value.stale { color: var(--text-faint); }
+  .sparkline { width: 56px; height: 22px; display: block; }
+  .empty-hint { color: var(--text-faint); font-size: 0.8rem; padding: 0.75rem 0; text-align: center; }
+
+  /* ---------- Generic tables (Templates / Devices tabs) ---------- */
+  table { border-collapse: collapse; width:100%; }
+  th, td { padding: 0.6rem 0.9rem; border-bottom: 1px solid var(--border-soft); text-align:left; font-size: 0.87rem; }
+  th { color: var(--text-dim); font-weight: 500; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; }
+  tbody tr:hover { background: var(--surface-2); }
+  .mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.78rem; color: var(--text-dim); }
+  .status-pill { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; }
+
+  .panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+  .btn-row { display: flex; gap: 0.5rem; }
+  button {
+    background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px;
+    padding: 0.5rem 0.9rem; cursor: pointer; font-size: 0.85rem;
+  }
+  button:hover { background: #232833; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: white; }
+  button.primary:hover { background: #5f9aff; }
+  button.danger-outline { border-color: #7f2b2b; color: var(--danger); }
+  button.small { padding: 0.3rem 0.6rem; font-size: 0.78rem; }
+
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+    display: flex; align-items: flex-start; justify-content: center; padding: 3rem 1rem; overflow-y: auto;
+  }
+  .modal-backdrop[hidden] { display: none; }
+  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.5rem; width: 100%; max-width: 640px; box-shadow: var(--shadow); }
+  .field-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.75rem; margin-bottom: 0.75rem; }
+  label { display: block; font-size: 0.76rem; color: var(--text-dim); margin-bottom: 0.25rem; }
+  input, select, textarea {
+    width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); padding: 0.45rem 0.6rem; font-size: 0.85rem;
+  }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+  fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 0.9rem; margin: 0 0 1rem; }
+  legend { padding: 0 0.4rem; color: var(--text-dim); font-size: 0.8rem; }
+  .tag-row { border: 1px solid var(--border); border-radius: 6px; padding: 0.6rem; margin-bottom: 0.6rem; position: relative; }
+  .tag-row .remove-tag { position: absolute; top: 0.4rem; right: 0.4rem; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }
+  .hint { color: var(--text-dim); font-size: 0.78rem; margin: 0.25rem 0 0.75rem; }
+  .result-box {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem;
+    font-family: ui-monospace, monospace; font-size: 0.78rem; white-space: pre-wrap; margin-top: 0.75rem; max-height: 220px; overflow: auto;
+  }
+  .result-box.ok { border-color: #2f6a3f; }
+  .result-box.fail { border-color: #7f2b2b; }
+</style>
+</head>
+<body>
+<div class="app-header">
+  <div>
+    <h1>IIoT Device Monitor</h1>
+    <div class="sub">Real-time status, device templates, and onboarding for OPC-UA and Modbus devices.</div>
+  </div>
+  <div class="live-pill" id="live-pill"><span class="dot"></span><span id="live-pill-text">Connecting...</span></div>
+</div>
+
+<div class="tabs">
+  <button class="tab-btn active" data-tab="dashboard">Live Dashboard</button>
+  <button class="tab-btn" data-tab="templates">Device Templates</button>
+  <button class="tab-btn" data-tab="devices">Devices</button>
+  <button class="tab-btn" data-tab="alerts">Alerts</button>
+  <a class="tab-btn" href="/walkthrough.html" target="_blank" rel="noopener" style="margin-left:auto; text-decoration:none;">📡 Walkthrough ↗</a>
+</div>
+
+<!-- ===================== DASHBOARD ===================== -->
+<section id="tab-dashboard" class="tab-panel">
+  <div class="kpi-row">
+    <div class="kpi-card"><div class="kpi-value" id="kpi-total">-</div><div class="kpi-label">Devices</div></div>
+    <div class="kpi-card accent-success"><div class="kpi-value" id="kpi-online">-</div><div class="kpi-label">Online</div></div>
+    <div class="kpi-card accent-warning"><div class="kpi-value" id="kpi-attention">-</div><div class="kpi-label">Need Attention</div></div>
+    <div class="kpi-card"><div class="kpi-value" id="kpi-tags">-</div><div class="kpi-label">Tags Monitored</div></div>
+    <div class="kpi-card accent-danger"><div class="kpi-value" id="kpi-alerts">-</div><div class="kpi-label">Active Alerts</div></div>
+  </div>
+
+  <div id="alert-banner"></div>
+
+  <div class="filter-row">
+    <input type="search" id="dashboard-search" placeholder="Search devices...">
+    <div class="chip-group" id="protocol-filter">
+      <button type="button" class="chip active" data-protocol="all">All</button>
+      <button type="button" class="chip" data-protocol="modbus">Modbus</button>
+      <button type="button" class="chip" data-protocol="opcua">OPC-UA</button>
+    </div>
+  </div>
+
+  <div class="device-grid" id="device-grid"></div>
+</section>
+
+<!-- ===================== ALERTS ===================== -->
+<section id="tab-alerts" class="tab-panel" hidden>
+  <div class="panel-header">
+    <h2>Alert Rules</h2>
+    <button class="primary" id="btn-new-alert-rule">+ New Rule</button>
+  </div>
+  <p class="hint">A rule fires once when a tag crosses its threshold, and clears once when it crosses back -
+    not once per reading. Email/SMS delivery is stubbed (logged to the backend console) until a provider is
+    configured; see <span class="mono">backend/app/notifier.py</span>.</p>
+  <table>
+    <thead><tr><th>Device</th><th>Tag</th><th>Condition</th><th>Severity</th><th>Enabled</th><th></th></tr></thead>
+    <tbody id="alert-rules-rows"></tbody>
+  </table>
+
+  <div class="panel-header" style="margin-top: 2rem;">
+    <h2>Alert Events</h2>
+  </div>
+  <table>
+    <thead><tr><th>Device</th><th>Condition</th><th>Severity</th><th>Status</th><th>Triggered</th><th></th></tr></thead>
+    <tbody id="alert-events-rows"></tbody>
+  </table>
+</section>
+
+<!-- ===================== TEMPLATES ===================== -->
+<section id="tab-templates" class="tab-panel" hidden>
+  <div class="panel-header">
+    <h2>Device Templates</h2>
+    <button class="primary" id="btn-new-template">+ New Template</button>
+  </div>
+  <p class="hint">A template captures a device *type* once (protocol + tag/register map). Onboard many physical
+    devices from the same template without redefining their tags each time.</p>
+  <table>
+    <thead><tr><th>Name</th><th>Protocol</th><th>Manufacturer / Model</th><th>Tags</th></tr></thead>
+    <tbody id="templates-rows"></tbody>
+  </table>
+</section>
+
+<!-- ===================== DEVICES ===================== -->
+<section id="tab-devices" class="tab-panel" hidden>
+  <div class="panel-header">
+    <h2>Devices</h2>
+    <div class="btn-row">
+      <button id="btn-bulk-onboard">Bulk Onboard (CSV)</button>
+      <button class="primary" id="btn-onboard-device">+ Onboard Device</button>
+    </div>
+  </div>
+  <table>
+    <thead><tr><th>Name</th><th>Protocol</th><th>Connection</th><th>Status</th><th></th></tr></thead>
+    <tbody id="devices-rows"></tbody>
+  </table>
+</section>
+
+<!-- ===================== MODAL: New Template ===================== -->
+<div id="modal-template" class="modal-backdrop" hidden>
+  <div class="modal">
+    <h3>New Device Template</h3>
+    <form id="form-template">
+      <div class="field-row">
+        <div><label>Name</label><input name="name" required placeholder="e.g. ABB Pump Controller"></div>
+        <div><label>Protocol</label>
+          <select name="protocol" id="template-protocol">
+            <option value="modbus">Modbus (TCP)</option>
+            <option value="opcua">OPC-UA</option>
+          </select>
+        </div>
+      </div>
+      <div class="field-row">
+        <div><label>Manufacturer</label><input name="manufacturer" placeholder="optional"></div>
+        <div><label>Model</label><input name="model" placeholder="optional"></div>
+        <div><label>Category</label><input name="category" placeholder="e.g. pump, sensor"></div>
+      </div>
+      <div><label>Description</label><textarea name="description" rows="2"></textarea></div>
+
+      <fieldset>
+        <legend>Tags</legend>
+        <div id="template-tag-list"></div>
+        <button type="button" id="btn-add-template-tag">+ Add Tag</button>
+      </fieldset>
+
+      <div class="modal-actions">
+        <button type="button" data-close-modal="modal-template">Cancel</button>
+        <button type="submit" class="primary">Create Template</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ===================== MODAL: Onboard Device ===================== -->
+<div id="modal-device" class="modal-backdrop" hidden>
+  <div class="modal">
+    <h3>Onboard Device</h3>
+    <form id="form-device">
+      <div class="field-row">
+        <div><label>Source</label>
+          <select id="device-source">
+            <option value="template">From Template</option>
+            <option value="custom">Custom (define tags inline)</option>
+          </select>
+        </div>
+        <div id="device-template-picker">
+          <label>Template</label>
+          <select id="device-template-select"></select>
+        </div>
+        <div id="device-protocol-picker" hidden>
+          <label>Protocol</label>
+          <select id="device-protocol-select">
+            <option value="modbus">Modbus (TCP)</option>
+            <option value="opcua">OPC-UA</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div><label>Device Name</label><input name="name" required placeholder="e.g. Pump 5"></div>
+        <div><label>Poll interval (seconds)</label><input name="poll_interval_seconds" type="number" step="0.5" value="1"></div>
+      </div>
+      <div class="field-row">
+        <div><label>Org ID</label><input name="org_id" value="org-demo"></div>
+        <div><label>Site ID</label><input name="site_id" value="site-demo"></div>
+        <div><label>Gateway ID</label><input name="gateway_id" value="edge-gateway-1"></div>
+      </div>
+      <p class="hint">Org/site/gateway management is a future screen - for now they default to the seeded demo values.</p>
+
+      <fieldset>
+        <legend>Connection</legend>
+        <div id="device-connection-fields"></div>
+      </fieldset>
+
+      <fieldset id="device-custom-tags-fieldset" hidden>
+        <legend>Tags (custom device)</legend>
+        <div id="device-tag-list"></div>
+        <button type="button" id="btn-add-device-tag">+ Add Tag</button>
+      </fieldset>
+
+      <div id="test-connection-result"></div>
+
+      <div class="modal-actions">
+        <button type="button" id="btn-test-connection">Test Connection</button>
+        <button type="button" data-close-modal="modal-device">Cancel</button>
+        <button type="submit" class="primary">Onboard Device</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ===================== MODAL: Bulk Onboard ===================== -->
+<div id="modal-bulk" class="modal-backdrop" hidden>
+  <div class="modal">
+    <h3>Bulk Onboard from CSV</h3>
+    <p class="hint">Every row must be the same device type. Columns: <span class="mono">device_name, host_or_endpoint,
+      port, unit_id_or_node_prefix</span>. <a href="/bulk_onboard_template.csv" download>Download a blank template</a>.</p>
+    <form id="form-bulk">
+      <div class="field-row">
+        <div><label>Template</label><select id="bulk-template-select"></select></div>
+      </div>
+      <div class="field-row">
+        <div><label>Org ID</label><input name="org_id" value="org-demo"></div>
+        <div><label>Site ID</label><input name="site_id" value="site-demo"></div>
+        <div><label>Gateway ID</label><input name="gateway_id" value="edge-gateway-1"></div>
+      </div>
+      <div><label>CSV File</label><input type="file" id="bulk-file" accept=".csv" required></div>
+      <div id="bulk-result"></div>
+      <div class="modal-actions">
+        <button type="button" data-close-modal="modal-bulk">Close</button>
+        <button type="submit" class="primary">Upload &amp; Onboard</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ===================== MODAL: New Alert Rule ===================== -->
+<div id="modal-alert-rule" class="modal-backdrop" hidden>
+  <div class="modal">
+    <h3>New Alert Rule</h3>
+    <form id="form-alert-rule">
+      <div class="field-row">
+        <div><label>Device</label><select id="alert-device-select"></select></div>
+        <div><label>Tag</label><select id="alert-tag-select"></select></div>
+      </div>
+      <div class="field-row">
+        <div><label>Condition</label>
+          <select id="alert-condition-select">
+            <option value="gt">&gt; (greater than)</option>
+            <option value="gte">&gt;= (greater or equal)</option>
+            <option value="lt">&lt; (less than)</option>
+            <option value="lte">&lt;= (less or equal)</option>
+          </select>
+        </div>
+        <div><label>Threshold</label><input id="alert-threshold-input" type="number" step="any" required></div>
+        <div><label>Severity</label>
+          <select id="alert-severity-select">
+            <option value="warning">Warning</option>
+            <option value="critical">Critical</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" data-close-modal="modal-alert-rule">Cancel</button>
+        <button type="submit" class="primary">Create Rule</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ===================== MODAL: Device Detail ===================== -->
+<div id="modal-detail" class="modal-backdrop" hidden>
+  <div class="modal">
+    <h3>Device Detail</h3>
+    <div id="detail-content" class="result-box"></div>
+    <div class="modal-actions">
+      <button type="button" data-close-modal="modal-detail">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== MODAL: Trend History ===================== -->
+<div id="modal-history" class="modal-backdrop" hidden>
+  <div class="modal" style="max-width: 720px;">
+    <h3 id="history-title">Trend</h3>
+    <div class="chip-group" id="history-range-group">
+      <button type="button" class="chip active" data-range="1h">1h</button>
+      <button type="button" class="chip" data-range="6h">6h</button>
+      <button type="button" class="chip" data-range="24h">24h</button>
+      <button type="button" class="chip" data-range="7d">7d</button>
+    </div>
+    <div id="history-chart-container" style="margin-top: 1rem; min-height: 220px;"></div>
+    <div class="modal-actions">
+      <button type="button" data-close-modal="modal-history">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===================== Tabs =====================
+document.querySelectorAll("button.tab-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("button.tab-btn").forEach((b) => b.classList.remove("active"));
+    document.querySelectorAll(".tab-panel").forEach((p) => (p.hidden = true));
+    btn.classList.add("active");
+    document.getElementById(`tab-${btn.dataset.tab}`).hidden = false;
+    if (btn.dataset.tab === "templates") loadTemplates();
+    if (btn.dataset.tab === "devices") { loadDevices(); loadTemplatesForSelects(); }
+    if (btn.dataset.tab === "alerts") { loadAlertRules(); loadAlertEvents(); }
+  });
+});
+
+document.querySelectorAll("[data-close-modal]").forEach((btn) => {
+  btn.addEventListener("click", () => closeModal(btn.dataset.closeModal));
+});
+function openModal(id) { document.getElementById(id).hidden = false; }
+function closeModal(id) { document.getElementById(id).hidden = true; }
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+const STALE_AFTER_SECONDS = 8;
+const HISTORY_LENGTH = 40;
+
+// ===================== Live Dashboard =====================
+// liveState: deviceId -> Map(tagKey -> { value, quality, lastMs, history:number[] })
+const liveState = new Map();
+// devicesMeta: deviceId -> { name, protocol, status }
+let devicesMeta = new Map();
+let dashboardFilter = { search: "", protocol: "all" };
+
+function getDeviceTags(deviceId) {
+  if (!liveState.has(deviceId)) liveState.set(deviceId, new Map());
+  return liveState.get(deviceId);
+}
+
+function recordReading(deviceId, tagKey, value, quality, atMs) {
+  const tags = getDeviceTags(deviceId);
+  const existing = tags.get(tagKey) || { history: [] };
+  const history = existing.history;
+  if (typeof value === "number") {
+    history.push(value);
+    if (history.length > HISTORY_LENGTH) history.shift();
+  }
+  tags.set(tagKey, { value, quality, lastMs: atMs, history });
+}
+
+async function loadDevicesMeta() {
+  const res = await fetch("/api/devices");
+  const devices = await res.json();
+  devicesMeta = new Map(devices.map((d) => [d.id, d]));
+}
+
+async function loadInitialReadings() {
+  const res = await fetch("/api/readings/latest");
+  const data = await res.json();
+  for (const r of data) {
+    recordReading(r.device_instance_id, r.tag_key, r.value, r.quality, new Date(r.time).getTime());
+  }
+}
+
+function setLivePillConnected(connected) {
+  const pill = document.getElementById("live-pill");
+  const text = document.getElementById("live-pill-text");
+  pill.classList.toggle("connected", connected);
+  text.textContent = connected ? "Live" : "Reconnecting...";
+}
+
+// activeAlerts: eventId -> event (only status === "active")
+const activeAlerts = new Map();
+
+function applyAlertEvent(event) {
+  if (event.status === "active") activeAlerts.set(event.id, event);
+  else activeAlerts.delete(event.id);
+}
+
+async function loadActiveAlerts() {
+  const res = await fetch("/api/alert-events?status=active");
+  const events = await res.json();
+  activeAlerts.clear();
+  for (const e of events) activeAlerts.set(e.id, e);
+}
+
+function alertMessage(event) {
+  const symbol = { gt: ">", gte: ">=", lt: "<", lte: "<=" }[event.condition] || event.condition;
+  const deviceName = devicesMeta.get(event.device_instance_id)?.name || event.device_instance_id;
+  return `${deviceName} / ${event.tag_key} ${symbol} ${event.threshold} (currently ${event.value})`;
+}
+
+function renderAlertBanner() {
+  const el = document.getElementById("alert-banner");
+  const active = [...activeAlerts.values()].sort((a, b) => (a.severity === b.severity ? 0 : a.severity === "critical" ? -1 : 1));
+  if (active.length === 0) { el.innerHTML = ""; return; }
+  el.innerHTML = `<div class="alert-banner-list">${active.slice(0, 5).map((e) => `
+    <div class="alert-banner-item ${e.severity}">
+      <div class="msg">${escapeHtml(alertMessage(e))}<span class="dim">${e.severity}</span></div>
+    </div>`).join("")}${active.length > 5 ? `<div class="hint">+${active.length - 5} more - see the Alerts tab</div>` : ""}</div>`;
+}
+
+function connectWs() {
+  const ws = new WebSocket(`ws://${location.host}/ws/live`);
+  ws.onopen = () => setLivePillConnected(true);
+  ws.onmessage = (evt) => {
+    const msg = JSON.parse(evt.data);
+    if (msg.type === "alert") {
+      applyAlertEvent(msg.event);
+      renderDashboard();
+      if (!document.getElementById("tab-alerts").hidden) loadAlertEvents();
+      return;
+    }
+    for (const r of msg.readings) {
+      recordReading(msg.device_id, r.tag_id, r.value, r.quality, msg.timestamp * 1000);
+    }
+    renderDashboard();
+  };
+  ws.onclose = () => { setLivePillConnected(false); setTimeout(connectWs, 2000); };
+  ws.onerror = () => ws.close();
+}
+
+function formatAge(seconds) {
+  if (seconds < 2) return "just now";
+  if (seconds < 60) return `${Math.floor(seconds)}s ago`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  return `${Math.floor(seconds / 3600)}h ago`;
+}
+
+function buildSparkline(history) {
+  if (!history || history.length < 2) return `<svg class="sparkline"></svg>`;
+  const min = Math.min(...history);
+  const max = Math.max(...history);
+  const span = max - min || 1;
+  const w = 56, h = 22, pad = 2;
+  const points = history.map((v, i) => {
+    const x = (i / (history.length - 1)) * (w - pad * 2) + pad;
+    const y = h - pad - ((v - min) / span) * (h - pad * 2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+  // Neutral color: red/green here would collide with the quality dot's good/bad meaning right next to it.
+  return `<svg class="sparkline" viewBox="0 0 ${w} ${h}"><polyline points="${points}" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" opacity="0.85"/></svg>`;
+}
+
+function deviceHealth(deviceId) {
+  const tags = liveState.get(deviceId);
+  const now = Date.now();
+  if (!tags || tags.size === 0) return "unknown";
+  let worst = "good";
+  for (const t of tags.values()) {
+    const ageSeconds = (now - t.lastMs) / 1000;
+    if (ageSeconds > STALE_AFTER_SECONDS) { worst = worst === "bad" ? "bad" : "stale"; continue; }
+    if (t.quality !== "good") worst = "bad";
+  }
+  return worst;
+}
+
+function renderDashboard() {
+  const grid = document.getElementById("device-grid");
+  const now = Date.now();
+
+  // Union of devices we know about (from API) and devices already streaming data.
+  const allIds = new Set([...devicesMeta.keys(), ...liveState.keys()]);
+  let cards = [...allIds].map((id) => ({ id, meta: devicesMeta.get(id), tags: liveState.get(id) }));
+
+  cards = cards.filter(({ id, meta }) => {
+    const name = meta?.name || id;
+    const protocol = meta?.protocol || "";
+    if (dashboardFilter.protocol !== "all" && protocol !== dashboardFilter.protocol) return false;
+    if (dashboardFilter.search && !name.toLowerCase().includes(dashboardFilter.search)) return false;
+    return true;
+  });
+
+  cards.sort((a, b) => (a.meta?.name || a.id).localeCompare(b.meta?.name || b.id));
+
+  // ---- KPIs (computed over the unfiltered set) ----
+  let onlineCount = 0, attentionCount = 0, tagCount = 0;
+  for (const id of allIds) {
+    const health = deviceHealth(id);
+    if (health === "good") onlineCount++;
+    if (health === "bad" || health === "stale") attentionCount++;
+    tagCount += liveState.get(id)?.size || 0;
+  }
+  document.getElementById("kpi-total").textContent = allIds.size;
+  document.getElementById("kpi-online").textContent = onlineCount;
+  document.getElementById("kpi-attention").textContent = attentionCount;
+  document.getElementById("kpi-tags").textContent = tagCount;
+  document.getElementById("kpi-alerts").textContent = activeAlerts.size;
+  renderAlertBanner();
+
+  // ---- Cards ----
+  grid.innerHTML = "";
+  if (cards.length === 0) {
+    grid.innerHTML = `<div class="empty-hint">No devices match this view.</div>`;
+    return;
+  }
+
+  for (const { id, meta, tags } of cards) {
+    const name = meta?.name || id;
+    const protocol = meta?.protocol || "unknown";
+    const health = deviceHealth(id);
+    const card = document.createElement("div");
+    card.className = "device-card";
+
+    const tagRows = tags && tags.size > 0
+      ? [...tags.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([tagKey, t]) => {
+          const ageSeconds = (now - t.lastMs) / 1000;
+          const stale = ageSeconds > STALE_AFTER_SECONDS;
+          const dotClass = stale ? "stale" : (t.quality === "good" ? "good" : "bad");
+          const valueClass = stale ? "stale" : (t.quality === "good" ? "" : "bad");
+          const displayValue = typeof t.value === "number" ? (Number.isInteger(t.value) ? t.value : t.value.toFixed(2)) : (t.value ?? "-");
+          return `<div class="tag-line" data-device="${escapeHtml(id)}" data-tag="${escapeHtml(tagKey)}" title="Click for trend">
+            <div class="tag-info"><div class="tag-name">${escapeHtml(tagKey)}</div><div class="tag-time">${formatAge(ageSeconds)}</div></div>
+            ${buildSparkline(t.history)}
+            <div class="tag-value ${valueClass}"><span class="status-dot ${dotClass}" style="margin-right:6px;"></span>${escapeHtml(displayValue)}</div>
+          </div>`;
+        }).join("")
+      : `<div class="empty-hint">Waiting for first reading...</div>`;
+
+    card.innerHTML = `
+      <div class="device-card-header">
+        <div>
+          <div class="device-name">${escapeHtml(name)}</div>
+          <div class="device-meta"><span class="badge ${protocol}">${escapeHtml(protocol)}</span></div>
+        </div>
+        <div class="device-status"><span class="status-dot ${health}"></span>${health === "good" ? "Online" : health === "unknown" ? "No data" : health === "stale" ? "Stale" : "Attention"}</div>
+      </div>
+      <div class="tag-list">${tagRows}</div>
+    `;
+    grid.appendChild(card);
+  }
+}
+
+document.getElementById("dashboard-search").addEventListener("input", (e) => {
+  dashboardFilter.search = e.target.value.trim().toLowerCase();
+  renderDashboard();
+});
+document.getElementById("protocol-filter").addEventListener("click", (e) => {
+  const btn = e.target.closest(".chip");
+  if (!btn) return;
+  document.querySelectorAll("#protocol-filter .chip").forEach((c) => c.classList.remove("active"));
+  btn.classList.add("active");
+  dashboardFilter.protocol = btn.dataset.protocol;
+  renderDashboard();
+});
+
+// Re-render every second even without new data, so "time ago" and staleness stay accurate.
+setInterval(renderDashboard, 1000);
+
+// ===================== Trend history modal =====================
+let historyContext = { deviceId: null, tagKey: null, range: "1h" };
+
+document.getElementById("device-grid").addEventListener("click", (e) => {
+  const row = e.target.closest(".tag-line[data-device]");
+  if (!row) return;
+  openHistoryModal(row.dataset.device, row.dataset.tag);
+});
+
+document.getElementById("history-range-group").addEventListener("click", (e) => {
+  const btn = e.target.closest(".chip");
+  if (!btn) return;
+  document.querySelectorAll("#history-range-group .chip").forEach((c) => c.classList.remove("active"));
+  btn.classList.add("active");
+  historyContext.range = btn.dataset.range;
+  loadHistoryChart();
+});
+
+async function openHistoryModal(deviceId, tagKey) {
+  historyContext = { deviceId, tagKey, range: "1h" };
+  const deviceName = devicesMeta.get(deviceId)?.name || deviceId;
+  document.getElementById("history-title").textContent = `${deviceName} / ${tagKey}`;
+  document.querySelectorAll("#history-range-group .chip").forEach((c) => c.classList.toggle("active", c.dataset.range === "1h"));
+  openModal("modal-history");
+  await loadHistoryChart();
+}
+
+async function loadHistoryChart() {
+  const { deviceId, tagKey, range } = historyContext;
+  const container = document.getElementById("history-chart-container");
+  container.innerHTML = `<div class="empty-hint">Loading...</div>`;
+  try {
+    const params = new URLSearchParams({ device_instance_id: deviceId, tag_key: tagKey, range });
+    const res = await fetch(`/api/readings/history?${params}`);
+    const points = await res.json();
+    container.innerHTML = buildHistoryChartSvg(points);
+  } catch (err) {
+    container.innerHTML = `<div class="empty-hint">Failed to load history: ${escapeHtml(String(err))}</div>`;
+  }
+}
+
+function buildHistoryChartSvg(points) {
+  const valid = points.filter((p) => typeof p.value === "number");
+  if (valid.length < 2) {
+    return `<div class="empty-hint">Not enough data yet for this range - try a shorter one, or wait for more readings.</div>`;
+  }
+
+  const w = 660, h = 240, padL = 52, padR = 16, padT = 16, padB = 30;
+  const values = valid.map((p) => p.value);
+  const min = Math.min(...values), max = Math.max(...values);
+  const span = (max - min) || Math.abs(max) || 1;
+  const times = valid.map((p) => new Date(p.time).getTime());
+  const t0 = times[0], t1 = times[times.length - 1];
+  const tSpan = (t1 - t0) || 1;
+
+  const xForI = (i) => padL + ((times[i] - t0) / tSpan) * (w - padL - padR);
+  const yForV = (v) => padT + (1 - (v - min) / span) * (h - padT - padB);
+  const linePoints = valid.map((p, i) => `${xForI(i).toFixed(1)},${yForV(p.value).toFixed(1)}`).join(" ");
+
+  const gridLines = [0, 0.5, 1].map((f) => {
+    const y = padT + f * (h - padT - padB);
+    const v = max - f * span;
+    return `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${w - padR}" y2="${y.toFixed(1)}" stroke="currentColor" stroke-width="1" opacity="0.12"/>
+            <text x="${padL - 8}" y="${(y + 3).toFixed(1)}" text-anchor="end" font-size="10" fill="currentColor" opacity="0.65">${v.toFixed(2)}</text>`;
+  }).join("");
+
+  const startLabel = new Date(t0).toLocaleString();
+  const endLabel = new Date(t1).toLocaleString();
+
+  return `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Line chart of the selected tag's value over time"
+            style="width:100%; height:auto; color:var(--text);">
+    ${gridLines}
+    <polyline points="${linePoints}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="${padL}" y="${h - 8}" font-size="10" fill="currentColor" opacity="0.65">${escapeHtml(startLabel)}</text>
+    <text x="${w - padR}" y="${h - 8}" text-anchor="end" font-size="10" fill="currentColor" opacity="0.65">${escapeHtml(endLabel)}</text>
+  </svg>`;
+}
+// Devices list can change from onboarding without a page reload; keep it fresh.
+setInterval(loadDevicesMeta, 15000);
+
+// ===================== Tag row builder (shared by Template + Custom Device forms) =====================
+function createTagRow(protocol) {
+  const div = document.createElement("div");
+  div.className = "tag-row";
+  div.dataset.protocol = protocol;
+
+  const protoFields = protocol === "modbus"
+    ? `<div><label>Register Address</label><input class="f-address" type="number" value="0" required></div>
+       <div><label>Count</label><input class="f-count" type="number" value="1"></div>`
+    : `<div><label>Browse Path (comma-separated)</label><input class="f-browsepath" placeholder="e.g. Temperature" required></div>`;
+
+  div.innerHTML = `
+    <button type="button" class="remove-tag small danger-outline">Remove</button>
+    <div class="field-row">
+      <div><label>Tag Key</label><input class="f-tagkey" placeholder="temperature_c" required></div>
+      <div><label>Display Name</label><input class="f-display" placeholder="Temperature" required></div>
+      <div><label>Data Type</label>
+        <select class="f-datatype">
+          <option value="float">float</option>
+          <option value="int">int</option>
+          <option value="bool">bool</option>
+          <option value="string">string</option>
+        </select>
+      </div>
+    </div>
+    <div class="field-row">
+      <div><label>Unit</label><input class="f-unit" placeholder="e.g. C, kPa"></div>
+      <div><label>Scale</label><input class="f-scale" type="number" step="any" value="1"></div>
+      ${protoFields}
+    </div>
+  `;
+  div.querySelector(".remove-tag").addEventListener("click", () => div.remove());
+  return div;
+}
+
+function readTagRows(container) {
+  return [...container.querySelectorAll(".tag-row")].map((row) => {
+    const protocol = row.dataset.protocol;
+    const protocol_config = protocol === "modbus"
+      ? { register_type: "holding", address: Number(row.querySelector(".f-address").value), count: Number(row.querySelector(".f-count").value) || 1 }
+      : { browse_path: row.querySelector(".f-browsepath").value.split(",").map((s) => s.trim()).filter(Boolean) };
+    return {
+      tag_key: row.querySelector(".f-tagkey").value,
+      display_name: row.querySelector(".f-display").value,
+      data_type: row.querySelector(".f-datatype").value,
+      unit: row.querySelector(".f-unit").value || null,
+      scale: Number(row.querySelector(".f-scale").value) || 1,
+      protocol_config,
+    };
+  });
+}
+
+// ===================== Templates tab =====================
+let templatesCache = [];
+
+async function loadTemplates() {
+  const res = await fetch("/api/templates");
+  templatesCache = await res.json();
+  const tbody = document.getElementById("templates-rows");
+  tbody.innerHTML = "";
+  for (const t of templatesCache) {
+    const tr = document.createElement("tr");
+    tr.innerHTML =
+      `<td>${escapeHtml(t.name)}</td><td><span class="badge ${t.protocol}">${escapeHtml(t.protocol)}</span></td>` +
+      `<td>${escapeHtml(t.manufacturer || "-")} / ${escapeHtml(t.model || "-")}</td>` +
+      `<td>${t.tags.length}</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+document.getElementById("btn-new-template").addEventListener("click", () => {
+  document.getElementById("form-template").reset();
+  document.getElementById("template-tag-list").innerHTML = "";
+  openModal("modal-template");
+});
+
+document.getElementById("btn-add-template-tag").addEventListener("click", () => {
+  const protocol = document.getElementById("template-protocol").value;
+  document.getElementById("template-tag-list").appendChild(createTagRow(protocol));
+});
+
+document.getElementById("template-protocol").addEventListener("change", () => {
+  document.getElementById("template-tag-list").innerHTML = ""; // tag protocol_config shape depends on protocol
+});
+
+document.getElementById("form-template").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const payload = {
+    name: form.name.value,
+    manufacturer: form.manufacturer.value || null,
+    model: form.model.value || null,
+    category: form.category.value || null,
+    protocol: document.getElementById("template-protocol").value,
+    description: form.description.value || null,
+    tags: readTagRows(document.getElementById("template-tag-list")),
+  };
+  const res = await fetch("/api/templates", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+  });
+  if (!res.ok) { alert("Failed to create template: " + (await res.text())); return; }
+  closeModal("modal-template");
+  loadTemplates();
+});
+
+// ===================== Devices tab =====================
+async function loadDevices() {
+  const res = await fetch("/api/devices");
+  const devices = await res.json();
+  devicesMeta = new Map(devices.map((d) => [d.id, d]));
+  const tbody = document.getElementById("devices-rows");
+  tbody.innerHTML = "";
+  for (const d of devices) {
+    const tr = document.createElement("tr");
+    tr.innerHTML =
+      `<td>${escapeHtml(d.name)}</td><td><span class="badge ${d.protocol}">${escapeHtml(d.protocol)}</span></td>` +
+      `<td class="mono">${escapeHtml(JSON.stringify(d.connection_config))}</td>` +
+      `<td><span class="status-pill"><span class="status-dot ${d.status === "active" ? "good" : "unknown"}"></span>${escapeHtml(d.status)}</span></td>` +
+      `<td><button class="small" data-view="${d.id}">View</button></td>`;
+    tbody.appendChild(tr);
+  }
+  tbody.querySelectorAll("[data-view]").forEach((btn) => {
+    btn.addEventListener("click", () => showDeviceDetail(btn.dataset.view));
+  });
+}
+
+async function showDeviceDetail(id) {
+  const res = await fetch(`/api/devices/${id}`);
+  const detail = await res.json();
+  document.getElementById("detail-content").textContent = JSON.stringify(detail, null, 2);
+  openModal("modal-detail");
+}
+
+async function loadTemplatesForSelects() {
+  if (templatesCache.length === 0) {
+    const res = await fetch("/api/templates");
+    templatesCache = await res.json();
+  }
+  for (const selectId of ["device-template-select", "bulk-template-select"]) {
+    const select = document.getElementById(selectId);
+    select.innerHTML = templatesCache
+      .map((t) => `<option value="${t.id}">${escapeHtml(t.name)} (${t.protocol})</option>`)
+      .join("");
+  }
+  renderDeviceConnectionFields();
+}
+
+function currentTemplate() {
+  const id = document.getElementById("device-template-select").value;
+  return templatesCache.find((t) => t.id === id);
+}
+
+function renderDeviceConnectionFields() {
+  const source = document.getElementById("device-source").value;
+  const protocol = source === "template" ? (currentTemplate()?.protocol || "modbus") : document.getElementById("device-protocol-select").value;
+  const container = document.getElementById("device-connection-fields");
+  container.innerHTML = protocol === "modbus"
+    ? `<div class="field-row">
+         <div><label>Host</label><input class="conn-host" placeholder="e.g. 10.0.1.20" required></div>
+         <div><label>Port</label><input class="conn-port" type="number" value="502"></div>
+         <div><label>Unit ID</label><input class="conn-unit" type="number" value="1"></div>
+       </div>`
+    : `<div class="field-row">
+         <div><label>Endpoint URL</label><input class="conn-endpoint" placeholder="opc.tcp://host:4840/path/" required></div>
+         <div><label>Browse Name (device root)</label><input class="conn-browsename" placeholder="e.g. PumpStation1"></div>
+       </div>`;
+}
+
+document.getElementById("btn-onboard-device").addEventListener("click", () => {
+  document.getElementById("form-device").reset();
+  document.getElementById("test-connection-result").innerHTML = "";
+  document.getElementById("device-tag-list").innerHTML = "";
+  document.getElementById("device-source").value = "template";
+  toggleDeviceSourceUI();
+  loadTemplatesForSelects();
+  openModal("modal-device");
+});
+
+function toggleDeviceSourceUI() {
+  const isTemplate = document.getElementById("device-source").value === "template";
+  document.getElementById("device-template-picker").hidden = !isTemplate;
+  document.getElementById("device-protocol-picker").hidden = isTemplate;
+  document.getElementById("device-custom-tags-fieldset").hidden = isTemplate;
+  renderDeviceConnectionFields();
+}
+document.getElementById("device-source").addEventListener("change", toggleDeviceSourceUI);
+document.getElementById("device-template-select").addEventListener("change", renderDeviceConnectionFields);
+document.getElementById("device-protocol-select").addEventListener("change", renderDeviceConnectionFields);
+
+document.getElementById("btn-add-device-tag").addEventListener("click", () => {
+  document.getElementById("device-tag-list").appendChild(createTagRow(document.getElementById("device-protocol-select").value));
+});
+
+function buildDeviceConnectionConfig(protocol) {
+  if (protocol === "modbus") {
+    return {
+      host: document.querySelector(".conn-host").value,
+      port: Number(document.querySelector(".conn-port").value) || 502,
+      unit_id: Number(document.querySelector(".conn-unit").value) || 1,
+    };
+  }
+  return {
+    endpoint: document.querySelector(".conn-endpoint").value,
+    browse_name: document.querySelector(".conn-browsename").value || undefined,
+  };
+}
+
+function currentDeviceProtocolAndTags() {
+  const isTemplate = document.getElementById("device-source").value === "template";
+  if (isTemplate) {
+    const tmpl = currentTemplate();
+    return { protocol: tmpl?.protocol, tags: tmpl?.tags || [], template_id: tmpl?.id };
+  }
+  const protocol = document.getElementById("device-protocol-select").value;
+  return { protocol, tags: readTagRows(document.getElementById("device-tag-list")), template_id: null };
+}
+
+document.getElementById("btn-test-connection").addEventListener("click", async () => {
+  const { protocol, tags } = currentDeviceProtocolAndTags();
+  const gatewayId = document.querySelector('#form-device [name="gateway_id"]').value;
+  const connection_config = buildDeviceConnectionConfig(protocol);
+  const resultEl = document.getElementById("test-connection-result");
+  resultEl.innerHTML = `<div class="result-box">Testing...</div>`;
+  try {
+    const res = await fetch("/api/devices/test-connection", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ gateway_id: gatewayId, protocol, connection_config, tags }),
+    });
+    const data = await res.json();
+    resultEl.innerHTML = `<div class="result-box ${data.success ? "ok" : "fail"}">${escapeHtml(JSON.stringify(data, null, 2))}</div>`;
+  } catch (err) {
+    resultEl.innerHTML = `<div class="result-box fail">${escapeHtml(String(err))}</div>`;
+  }
+});
+
+document.getElementById("form-device").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const { protocol, tags, template_id } = currentDeviceProtocolAndTags();
+  const connection_config = buildDeviceConnectionConfig(protocol);
+  const payload = {
+    org_id: form.org_id.value, site_id: form.site_id.value, gateway_id: form.gateway_id.value,
+    template_id: template_id || null,
+    name: form.name.value, protocol, connection_config,
+    poll_interval_seconds: Number(form.poll_interval_seconds.value) || 1,
+    tag_overrides: template_id ? [] : tags,
+  };
+  const res = await fetch("/api/devices", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+  });
+  if (!res.ok) { alert("Failed to onboard device: " + (await res.text())); return; }
+  closeModal("modal-device");
+  loadDevices();
+  loadDevicesMeta();
+});
+
+// ===================== Bulk onboarding =====================
+document.getElementById("btn-bulk-onboard").addEventListener("click", () => {
+  document.getElementById("form-bulk").reset();
+  document.getElementById("bulk-result").innerHTML = "";
+  loadTemplatesForSelects();
+  openModal("modal-bulk");
+});
+
+document.getElementById("form-bulk").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const templateId = document.getElementById("bulk-template-select").value;
+  const file = document.getElementById("bulk-file").files[0];
+  if (!file) return;
+  const formData = new FormData();
+  formData.append("file", file);
+  const params = new URLSearchParams({
+    template_id: templateId, org_id: form.org_id.value, site_id: form.site_id.value, gateway_id: form.gateway_id.value,
+  });
+  const resultEl = document.getElementById("bulk-result");
+  resultEl.innerHTML = `<div class="result-box">Uploading...</div>`;
+  const res = await fetch(`/api/devices/bulk-csv?${params}`, { method: "POST", body: formData });
+  const data = await res.json();
+  resultEl.innerHTML = `<div class="result-box ${data.errors && data.errors.length ? "fail" : "ok"}">${escapeHtml(JSON.stringify(data, null, 2))}</div>`;
+  loadDevices();
+  loadDevicesMeta();
+});
+
+// ===================== Alerts tab =====================
+async function loadAlertRules() {
+  const res = await fetch("/api/alert-rules");
+  const rules = await res.json();
+  const tbody = document.getElementById("alert-rules-rows");
+  tbody.innerHTML = "";
+  const symbol = { gt: ">", gte: ">=", lt: "<", lte: "<=" };
+  for (const r of rules) {
+    const deviceName = devicesMeta.get(r.device_instance_id)?.name || r.device_instance_id;
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(deviceName)}</td>
+      <td>${escapeHtml(r.tag_key)}</td>
+      <td>${symbol[r.condition] || r.condition} ${r.threshold}</td>
+      <td><span class="badge ${r.severity}">${escapeHtml(r.severity)}</span></td>
+      <td><input type="checkbox" data-toggle="${r.id}" ${r.enabled ? "checked" : ""}></td>
+      <td><button class="small danger-outline" data-delete="${r.id}">Delete</button></td>
+    `;
+    tbody.appendChild(tr);
+  }
+  tbody.querySelectorAll("[data-delete]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      await fetch(`/api/alert-rules/${btn.dataset.delete}`, { method: "DELETE" });
+      loadAlertRules();
+    });
+  });
+  tbody.querySelectorAll("[data-toggle]").forEach((checkbox) => {
+    checkbox.addEventListener("change", async () => {
+      const rule = rules.find((r) => r.id === checkbox.dataset.toggle);
+      await fetch(`/api/alert-rules/${rule.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...rule, enabled: checkbox.checked }),
+      });
+      loadAlertRules();
+    });
+  });
+}
+
+async function loadAlertEvents() {
+  const res = await fetch("/api/alert-events?limit=100");
+  const events = await res.json();
+  const tbody = document.getElementById("alert-events-rows");
+  tbody.innerHTML = "";
+  for (const e of events) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(alertMessage(e))}</td>
+      <td class="mono">${escapeHtml(e.condition)} ${e.threshold}</td>
+      <td><span class="badge ${e.severity}">${escapeHtml(e.severity)}</span></td>
+      <td><span class="badge ${e.status}">${escapeHtml(e.status)}${e.acknowledged ? " · ack" : ""}</span></td>
+      <td>${new Date(e.triggered_at).toLocaleString()}</td>
+      <td>${e.status === "active" && !e.acknowledged ? `<button class="small" data-ack="${e.id}">Acknowledge</button>` : ""}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+  tbody.querySelectorAll("[data-ack]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      await fetch(`/api/alert-events/${btn.dataset.ack}/acknowledge`, { method: "POST" });
+      loadAlertEvents();
+    });
+  });
+}
+
+async function populateAlertTagSelect() {
+  const deviceId = document.getElementById("alert-device-select").value;
+  const tagSelect = document.getElementById("alert-tag-select");
+  if (!deviceId) { tagSelect.innerHTML = ""; return; }
+  const res = await fetch(`/api/devices/${deviceId}`);
+  const detail = await res.json();
+  tagSelect.innerHTML = detail.tags.map((t) => `<option value="${escapeHtml(t.tag_key)}">${escapeHtml(t.display_name)} (${escapeHtml(t.tag_key)})</option>`).join("");
+}
+
+document.getElementById("btn-new-alert-rule").addEventListener("click", async () => {
+  document.getElementById("form-alert-rule").reset();
+  const deviceSelect = document.getElementById("alert-device-select");
+  deviceSelect.innerHTML = [...devicesMeta.values()].map((d) => `<option value="${d.id}">${escapeHtml(d.name)}</option>`).join("");
+  await populateAlertTagSelect();
+  openModal("modal-alert-rule");
+});
+document.getElementById("alert-device-select").addEventListener("change", populateAlertTagSelect);
+
+document.getElementById("form-alert-rule").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const payload = {
+    device_instance_id: document.getElementById("alert-device-select").value,
+    tag_key: document.getElementById("alert-tag-select").value,
+    condition: document.getElementById("alert-condition-select").value,
+    threshold: Number(document.getElementById("alert-threshold-input").value),
+    severity: document.getElementById("alert-severity-select").value,
+    enabled: true,
+  };
+  const res = await fetch("/api/alert-rules", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+  });
+  if (!res.ok) { alert("Failed to create rule: " + (await res.text())); return; }
+  closeModal("modal-alert-rule");
+  loadAlertRules();
+});
+
+// ===================== Init =====================
+(async function init() {
+  await loadDevicesMeta();
+  await loadInitialReadings();
+  await loadActiveAlerts();
+  renderDashboard();
+  connectWs();
+})();
+</script>
+</body>
+</html>
