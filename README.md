@@ -1,114 +1,125 @@
 # IIoT Device Monitor
 
-Real-time device status app for OPC-UA and Modbus devices. See
-`C:\Users\admin\.claude\plans\iiot-device-monitoring-app.md` for the base
-architecture and `can-i-sell-this-virtual-emerson.md` for the device
-template/instance onboarding design this implements.
+Real-time status, device onboarding, and threshold alerting for industrial devices connected over
+**OPC-UA** or **Modbus TCP**. An edge gateway polls devices on-site and publishes over TLS-encrypted
+MQTT to a backend that stores history in TimescaleDB, pushes live updates over WebSocket, and evaluates
+alert rules.
 
-## Run it
+No real hardware is required to run this — two simulators stand in for an OPC-UA and a Modbus device.
+
+## Prerequisites
+
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (with Docker Compose v2, included by default)
+- Ports `8000`, `8883`, `5432`, `5020`, `4840` free on your host
+
+## Quick start
 
 ```bash
+git clone https://github.com/guptajrakesh/iiot-device-monitor.git
+cd iiot-device-monitor
 docker compose up --build
 ```
 
-Then open http://localhost:8000 - it seeds a demo org/site/gateway plus one
-Modbus and one OPC-UA device (matching the two simulator containers) and
-shows their live values updating over a WebSocket.
+First run takes a few minutes (pulling base images, installing Python dependencies, generating a
+local TLS certificate for MQTT). Once it settles:
 
-No real PLC or OPC-UA server is needed: `modbus-sim` and `opcua-sim` are
-fake devices with drifting values, standing in for real hardware during
-development (see `simulators/`).
+- **Dashboard**: http://localhost:8000
+- **Walkthrough / architecture doc**: http://localhost:8000/walkthrough.html (also linked from the
+  dashboard's menu bar)
+
+It comes up pre-seeded with a demo org/site/gateway and two devices already streaming live data —
+one Modbus, one OPC-UA — so there's something to look at immediately, no setup needed.
+
+To stop everything: `docker compose down` (add `-v` to also wipe the database and generated certs).
+
+## What's running
+
+| Service | Purpose | Host port |
+|---|---|---|
+| `backend` | FastAPI app: REST API, MQTT ingest, WebSocket, alert evaluation | `8000` |
+| `edge-gateway` | Polls the simulated devices, publishes readings over MQTT | — |
+| `mosquitto` | MQTT broker, TLS-only | `8883` |
+| `timescaledb` | Postgres + TimescaleDB, stores every reading | `5432` |
+| `modbus-sim` | Fake Modbus TCP device (drifting temperature/pressure/run-hours) | `5020` |
+| `opcua-sim` | Fake OPC-UA device (drifting temperature/vibration/status) | `4840` |
+| `cert-init` | One-shot: generates the local MQTT TLS certificate, then exits | — |
+
+## Using the app
+
+The dashboard has four tabs:
+
+- **Live Dashboard** — KPI summary, one card per device, sparklines per tag. Click any tag row to open
+  a historical trend chart (1h / 6h / 24h / 7d, backed by TimescaleDB's `time_bucket()`).
+- **Device Templates** — define a device *type* once (protocol + full tag/register map), then reuse it.
+- **Devices** — onboard a device from a template (with a live **Test Connection** check before saving),
+  onboard many at once from a CSV (see `sample_bulk_onboard.csv`), or define a one-off custom device.
+- **Alerts** — set a threshold on any device/tag (`>`, `>=`, `<`, `<=`), see the live event feed, and
+  acknowledge active alerts. Notifications are logged to the backend console in the exact shape a real
+  email/SMS would take (see `backend/app/notifier.py`) — wiring up a real provider later doesn't touch
+  anything else in the pipeline.
+
+New devices onboarded through the UI or API go live within one gateway poll cycle (~15s) — no restart.
+
+## Inspecting the data directly
+
+Connect any Postgres client (DBeaver, TablePlus, pgAdmin, `psql`) to:
+
+| Field | Value |
+|---|---|
+| Host | `localhost` |
+| Port | `5432` |
+| Database | `iiot` |
+| User / Password | `iiot` / `iiot` |
+
+Or from the command line:
+
+```bash
+docker compose exec timescaledb psql -U iiot -d iiot -c \
+  "SELECT device_instance_id, tag_key, value, time FROM readings ORDER BY time DESC LIMIT 10;"
+```
 
 ## Architecture
 
 ```
-[modbus-sim / opcua-sim] --OPC-UA/Modbus--> [edge-gateway]
-                                                  |  normalizes, buffers locally on outage
-                                                  v
-                                          MQTT (mosquitto)
-                                                  |
-                                                  v
-                                    [backend: ingest -> TimescaleDB]
-                                                  |
-                                                  v
-                                    WebSocket -> dashboard (backend/app/static)
+[Device] --OPC-UA/Modbus--> [Edge Gateway] --MQTT over TLS--> [Mosquitto]
+                                  |  buffers to disk on outage         |
+                                  |  polls backend for its config      | subscribe
+                                  v                                    v
+                         [Backend API]                        [Ingest Service]
+                                                                   |        |
+                                                            insert |        | broadcast + evaluate
+                                                                   v        v
+                                                         [TimescaleDB]  [WebSocket] -> [Dashboard]
+                                                                             |
+                                                                     [Alert Rules] -> [Notifier]
 ```
 
-The edge gateway never receives inbound connections - it polls
-`GET /api/gateways/{gateway_id}/config` for its device/tag assignment and
-publishes outbound to MQTT, matching how a real deployment would reach
-devices sitting on an isolated OT network from a cloud backend.
+The gateway only ever makes outbound connections (poll the backend, publish to MQTT) — nothing
+downstream can reach back into the device network. See `http://localhost:8000/walkthrough.html` for
+diagrams and a full walkthrough of both this data-flow and the device onboarding design.
 
-## Onboarding devices (Device Template + Device Instance)
+## Security notes
 
-Rather than hand-writing config per device, you define a **template** once
-per device *type* (protocol + full tag/register map), then create cheap
-**instances** from it that only supply connection details.
+- MQTT is TLS-encrypted against a self-signed CA generated automatically on first run
+  (`mosquitto/gen-certs.sh`) — real, not aspirational.
+- **There is no authentication anywhere in this app.** Every REST endpoint and the MQTT broker itself
+  (`allow_anonymous true`) are open to anyone who can reach them. This is fine for local development;
+  it is the single biggest gap before deploying this anywhere beyond your own machine.
 
-**1. Create a template** (already done for you by the seed data - this is
-what it looks like):
+## Known limitations
 
-```bash
-curl -X POST http://localhost:8000/api/templates -H "Content-Type: application/json" -d '{
-  "name": "Generic Modbus Pump Transmitter",
-  "protocol": "modbus",
-  "tags": [
-    {"tag_key": "temperature_c", "display_name": "Temperature", "scale": 0.1,
-     "protocol_config": {"register_type": "holding", "address": 0, "count": 1}}
-  ]
-}'
+- Modbus: holding registers only (input/coil/discrete registers are accepted in the schema but not
+  yet read), and no multi-register values (e.g. a 32-bit float spanning two registers isn't decoded).
+- Modbus RTU / serial devices aren't supported — TCP only.
+- OPC-UA connects anonymously only — no username/password or certificate-based security.
+- OPC-UA is polled on the same loop as Modbus rather than using native subscriptions.
+
+## Project layout
+
 ```
-
-**2. Onboard one device from a template:**
-
-```bash
-curl -X POST http://localhost:8000/api/devices -H "Content-Type: application/json" -d '{
-  "org_id": "org-demo", "site_id": "site-demo", "gateway_id": "edge-gateway-1",
-  "template_id": "tmpl-modbus-pump",
-  "name": "Pump 4 (Modbus)", "protocol": "modbus",
-  "connection_config": {"host": "modbus-sim", "port": 502, "unit_id": 4}
-}'
+backend/           FastAPI app (REST API, MQTT ingest, alert engine, static dashboard)
+edge-gateway/       Polls devices, publishes MQTT, buffers on outage
+simulators/         Fake Modbus + OPC-UA devices for development
+mosquitto/          Broker config + TLS cert generation script
+docker-compose.yml  Wires all of the above together
 ```
-
-The gateway picks this up on its next config poll (every 15s) - no restart
-needed - and the new device appears on the dashboard.
-
-**3. Onboard n devices at once (bulk CSV)** - see `sample_bulk_onboard.csv`:
-
-```bash
-curl -X POST "http://localhost:8000/api/devices/bulk-csv?template_id=tmpl-modbus-pump&org_id=org-demo&site_id=site-demo&gateway_id=edge-gateway-1" \
-  -F "file=@sample_bulk_onboard.csv"
-```
-
-Note: the sample CSV points extra "devices" at the same `modbus-sim`
-container with different unit IDs, purely to demonstrate the bulk path
-against the one simulator available in dev - the simulator only actually
-serves unit ID 1, so those extra rows will show `quality: bad` on the
-dashboard rather than real data. Against real hardware, each row would be a
-different physical device's real IP/unit ID.
-
-**4. Test a connection before saving** (what an onboarding UI would call
-before letting you hit save):
-
-```bash
-curl -X POST http://localhost:8000/api/devices/test-connection -H "Content-Type: application/json" -d '{
-  "gateway_id": "edge-gateway-1", "protocol": "modbus",
-  "connection_config": {"host": "modbus-sim", "port": 502, "unit_id": 1},
-  "tags": [{"tag_key": "temperature_c", "display_name": "Temperature", "scale": 0.1,
-            "protocol_config": {"register_type": "holding", "address": 0, "count": 1}}]
-}'
-```
-
-## What's built vs. what's next
-
-Built: template/instance data model, single + bulk onboarding, gateway
-hot-reload via config polling, test-connection round trip, MQTT ingest into
-TimescaleDB, live WebSocket dashboard, local buffering on the gateway if the
-broker connection drops.
-
-Not yet built (next phase): an actual onboarding UI (template library +
-device wizard screens - the API above is what it would call), Modbus RTU/
-serial support, alarm thresholds, multi-tenant auth, and OPC-UA
-subscriptions (Phase 1 polls OPC-UA on the same interval as Modbus rather
-than using native push, to keep the gateway's poll loop uniform across
-protocols).
