@@ -60,27 +60,36 @@ async def _handle_reading(message, ws_manager: WSManager):
 
     device_id = payload["device_id"]
     ts = datetime.fromtimestamp(payload["timestamp"], tz=timezone.utc)
-    session = SessionLocal()
-    try:
-        for reading in payload["readings"]:
-            session.execute(
-                insert(Reading).values(
-                    time=ts,
-                    device_instance_id=device_id,
-                    tag_key=reading["tag_id"],
-                    value=reading["value"],
-                    quality=reading["quality"],
+
+    # A transient DB hiccup (a brief DNS blip, a momentary connection drop)
+    # shouldn't permanently lose a reading - a couple of quick retries rides
+    # out anything short-lived before falling back to drop-and-log, same as
+    # a single bad reading (wrong type, out-of-range value, etc.) that must
+    # not take down the whole MQTT ingest connection for every other device.
+    for attempt in range(1, 4):
+        session = SessionLocal()
+        try:
+            for reading in payload["readings"]:
+                session.execute(
+                    insert(Reading).values(
+                        time=ts,
+                        device_instance_id=device_id,
+                        tag_key=reading["tag_id"],
+                        value=reading["value"],
+                        quality=reading["quality"],
+                    )
                 )
-            )
-        session.commit()
-    except Exception:
-        # A single bad reading (wrong type, out-of-range value, etc.) must not
-        # take down the whole MQTT ingest connection for every other device.
-        session.rollback()
-        log.exception("Failed to store readings for device %s; dropping this batch", device_id)
-        return
-    finally:
-        session.close()
+            session.commit()
+            break
+        except Exception:
+            session.rollback()
+            if attempt == 3:
+                log.exception("Failed to store readings for device %s; dropping this batch", device_id)
+                return
+            log.warning("DB write failed for device %s (attempt %d/3); retrying shortly", device_id, attempt)
+            await asyncio.sleep(1)
+        finally:
+            session.close()
 
     await ws_manager.broadcast(
         {"type": "reading", "device_id": device_id, "timestamp": payload["timestamp"], "readings": payload["readings"]}

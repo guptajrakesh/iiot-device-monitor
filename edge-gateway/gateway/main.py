@@ -46,11 +46,14 @@ class Gateway:
     one poll cycle - no gateway redeploy needed.
     """
 
+    STALL_THRESHOLD_SECONDS = 30
+
     def __init__(self):
         self.buffer = LocalBuffer()
         self.mqtt_client: aiomqtt.Client | None = None
         self.device_tasks: dict[str, asyncio.Task] = {}
         self.connectors: dict[str, object] = {}
+        self.last_activity: dict[str, float] = {}
 
     async def fetch_config(self) -> list[dict]:
         async with httpx.AsyncClient(timeout=25) as client:
@@ -101,7 +104,13 @@ class Gateway:
             self.buffer.enqueue({"topic": topic, "payload": payload})
             return
         try:
-            await self.mqtt_client.publish(topic, message, qos=1)
+            # A bare await here can hang indefinitely if the client's
+            # internal write path ever stalls (seen in practice: the whole
+            # poll loop froze mid-publish with no exception at all, since
+            # every device shares this one client). A timeout turns that
+            # into a normal buffer-and-continue instead of a silent, total
+            # stall of every device's polling.
+            await asyncio.wait_for(self.mqtt_client.publish(topic, message, qos=1), timeout=10)
         except Exception as exc:
             log.warning("MQTT publish failed (%s); buffering locally", exc)
             self.buffer.enqueue({"topic": topic, "payload": payload})
@@ -126,10 +135,43 @@ class Gateway:
 
     async def poll_device(self, device_id: str, connector, interval: float):
         while True:
+            self.last_activity[device_id] = time.time()
             readings = await connector.read_tags()
             payload = {"device_id": device_id, "timestamp": time.time(), "readings": readings}
             await self.publish(f"iiot/{device_id}/readings", payload)
             await asyncio.sleep(interval)
+
+    async def watchdog_loop(self):
+        # Belt-and-suspenders: seen in practice on a real deploy - both
+        # devices' poll loops went completely silent (no exception, no log
+        # line, nothing) while config_poll_loop kept working fine on its own
+        # independent connection, so whatever wedges these loops doesn't
+        # necessarily raise anything catchable at the call site. Rather than
+        # keep chasing the exact internal cause, this notices the lack of
+        # forward progress and forcibly recycles just the stalled device -
+        # cancelling its task and connector so the next config_poll_loop
+        # cycle (within CONFIG_POLL_SECONDS) recreates it from scratch.
+        while True:
+            await asyncio.sleep(10)
+            now = time.time()
+            for device_id in list(self.last_activity):
+                stalled_for = now - self.last_activity[device_id]
+                if stalled_for <= self.STALL_THRESHOLD_SECONDS:
+                    continue
+                log.error(
+                    "Device %s poll loop stalled (no activity for %.0fs) - recycling it",
+                    device_id, stalled_for,
+                )
+                task = self.device_tasks.pop(device_id, None)
+                if task:
+                    task.cancel()
+                connector = self.connectors.pop(device_id, None)
+                if connector:
+                    try:
+                        await asyncio.wait_for(connector.close(), timeout=5)
+                    except Exception:
+                        pass
+                self.last_activity.pop(device_id, None)
 
     async def handle_test_request(self, message):
         payload = json.loads(message.payload)
@@ -168,6 +210,7 @@ class Gateway:
                 self.config_poll_loop(),
                 self.flush_buffer_loop(),
                 self.test_listener_loop(client),
+                self.watchdog_loop(),
             )
 
 
@@ -205,6 +248,15 @@ async def main():
     while True:
         try:
             await gateway.run()
+        except asyncio.CancelledError:
+            # Not a subclass of Exception since Python 3.8 - a bare "except
+            # Exception" here would let this escape uncaught and silently
+            # kill the whole process (with nothing left to restart it),
+            # which is exactly what a stuck-without-new-data deploy looked
+            # like: everything else in the container kept running fine.
+            log.error("Gateway connection loop cancelled internally; retrying in 5s")
+            gateway.mqtt_client = None
+            await asyncio.sleep(5)
         except Exception as exc:
             log.error("Gateway connection loop crashed: %s; retrying in 5s", exc)
             gateway.mqtt_client = None

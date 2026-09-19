@@ -8,39 +8,44 @@
 # MQTT/Modbus/OPC-UA traffic never leaves the container.
 #
 # Backend starts FIRST, before anything else competes for the free tier's
-# limited CPU during its own startup (DB connect/seed) - Render's health
-# check has a limited grace period on first deploy, and starting backend
-# last (after mosquitto + two simulators + the gateway all fight for the
-# same CPU share) pushed it past that window on a real deploy.
+# limited CPU during its own startup (DB connect/seed).
 #
-# PORT (Render's assigned public port) must only ever be bound by the
-# backend - the simulators/gateway each carry their own leftover
-# health-check listener from the old multi-service design that otherwise
-# defaults to the same $PORT and races the real backend for it.
+# Every background process runs inside a tiny restart loop: if any of them
+# ever exits (crash, an uncaught exception, anything), nothing in a plain
+# multi-process container would otherwise notice or restart it - backend
+# would keep answering Render's health check just fine while, say, the
+# gateway sat dead and no new data ever arrived again. This is what actually
+# happened on a real deploy (traced to an uncaught asyncio.CancelledError in
+# the gateway, now also fixed at the source in gateway/main.py) - this loop
+# is the safety net for that failure mode and any other one like it.
 set -e
 
 echo "[entrypoint] starting backend..."
 (cd /app/backend && exec uvicorn app.main:app --host 0.0.0.0 --port "$PORT") &
 BACKEND_PID=$!
 
-echo "[entrypoint] starting mosquitto..."
-mosquitto -c /app/mosquitto.conf &
+run_forever() {
+  name="$1"
+  shift
+  while true; do
+    # "|| true" matters: under `set -e`, a non-zero exit from "$@" (the
+    # crash this loop exists to recover from) would otherwise trigger
+    # errexit and kill the loop itself before it can restart anything.
+    "$@" || true
+    echo "[entrypoint] $name exited unexpectedly - restarting in 2s" >&2
+    sleep 2
+  done
+}
 
-echo "[entrypoint] starting Modbus simulator..."
-(export PORT=18081; cd /app/simulators/modbus_sim && exec python simulator.py) &
+run_forever mosquitto mosquitto -c /app/mosquitto.conf &
 
-echo "[entrypoint] starting OPC-UA simulator..."
-(export PORT=18082; cd /app/simulators/opcua_sim && exec python simulator.py) &
+run_forever modbus-sim sh -c 'export PORT=18081; cd /app/simulators/modbus_sim && python simulator.py' &
+
+run_forever opcua-sim sh -c 'export PORT=18082; cd /app/simulators/opcua_sim && python simulator.py' &
 
 sleep 2
 
-echo "[entrypoint] starting edge gateway..."
-(
-  export BACKEND_PORT="$PORT"
-  export PORT=18083
-  cd /app/edge-gateway
-  exec python -m gateway.main
-) &
+run_forever edge-gateway sh -c "export BACKEND_PORT=\"$PORT\"; export PORT=18083; cd /app/edge-gateway && python -m gateway.main" &
 
 # Ties the container's lifecycle to the backend specifically - if it dies,
 # the container exits so Render notices and restarts it.
