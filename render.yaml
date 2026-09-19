@@ -12,36 +12,40 @@ services:
       - key: MQTT_HOST
         fromService:
           name: iiot-mosquitto
-          type: pserv
+          type: web
           property: host
       - key: MQTT_PORT
         value: "1883"
       - key: MODBUS_SIM_HOST
         fromService:
           name: iiot-modbus-sim
-          type: pserv
+          type: web
           property: host
       - key: OPCUA_SIM_HOST
         fromService:
           name: iiot-opcua-sim
-          type: pserv
+          type: web
           property: host
 
-  - type: pserv
+  # Render's free plan doesn't support Private Services, so these three run
+  # as Web Services instead - reachable internally the same way, but also
+  # getting a public URL as a side effect (low real risk: mosquitto here has
+  # no data worth protecting, and the two sims just emit fake drifting numbers).
+  - type: web
     name: iiot-mosquitto
     runtime: docker
     plan: free
     dockerfilePath: mosquitto/Dockerfile.cloud
     dockerContext: mosquitto
 
-  - type: pserv
+  - type: web
     name: iiot-modbus-sim
     runtime: docker
     plan: free
     dockerfilePath: simulators/modbus_sim/Dockerfile
     dockerContext: simulators/modbus_sim
 
-  - type: pserv
+  - type: web
     name: iiot-opcua-sim
     runtime: docker
     plan: free
@@ -70,7 +74,7 @@ services:
       - key: MQTT_HOST
         fromService:
           name: iiot-mosquitto
-          type: pserv
+          type: web
           property: host
       - key: MQTT_PORT
         value: "1883"

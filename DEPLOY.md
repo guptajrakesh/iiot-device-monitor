@@ -16,21 +16,25 @@ stop and don't enter them** — come back here and we'll figure out an alternati
 | Render service | Type | What it is |
 |---|---|---|
 | `iiot-backend` | Web Service | The API + dashboard — this is the URL you'll actually visit |
-| `iiot-mosquitto` | Private Service | MQTT broker (plaintext — see note below) |
-| `iiot-modbus-sim` | Private Service | Fake Modbus device |
-| `iiot-opcua-sim` | Private Service | Fake OPC-UA device |
+| `iiot-mosquitto` | Web Service | MQTT broker (plaintext — see note below) |
+| `iiot-modbus-sim` | Web Service | Fake Modbus device |
+| `iiot-opcua-sim` | Web Service | Fake OPC-UA device |
 | `iiot-edge-gateway` | Background Worker | Polls the simulators, publishes to MQTT |
 
 The database lives outside Render entirely, on Timescale Cloud.
 
-**Note on security**: the deployed MQTT broker runs without TLS (`mosquitto/Dockerfile.cloud`),
-unlike local `docker compose up` which uses a real TLS-encrypted broker. Render's private services
-aren't reachable from the public internet at all — only other services in the same Render account can
-reach them — so this trades the local setup's defense-in-depth for simplicity, which is a reasonable
-call for a demo deployment but worth knowing about. Separately, and more importantly: **this app has
-no authentication anywhere**. The backend's URL, once deployed, is a normal public web address with
-zero login — anyone who has the link can onboard/delete devices, read all data, and change alert
-rules. Don't put anything sensitive behind it, and treat the link as effectively public.
+**Note on security**: Render's free plan doesn't support Private Services, so `iiot-mosquitto`,
+`iiot-modbus-sim`, and `iiot-opcua-sim` run as Web Services instead — reachable internally by the
+other services the same way, but each also gets a public URL as a side effect. In practice this is low
+real risk: mosquitto here holds no data worth protecting and the two simulators just emit fake
+drifting numbers, but it's worth knowing they're technically public, not sealed off. The MQTT broker
+also runs without TLS (`mosquitto/Dockerfile.cloud`), unlike local `docker compose up`'s
+TLS-encrypted broker — a deliberate simplification for this deployment target.
+
+Separately, and more importantly: **this app has no authentication anywhere**. The backend's URL,
+once deployed, is a normal public web address with zero login — anyone who has the link can
+onboard/delete devices, read all data, and change alert rules. Don't put anything sensitive behind it,
+and treat the link as effectively public.
 
 ## Steps
 
