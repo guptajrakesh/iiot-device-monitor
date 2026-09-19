@@ -15,6 +15,7 @@ Coils (function code 1):
 """
 import asyncio
 import logging
+import os
 import random
 
 from pymodbus.datastore import (
@@ -28,6 +29,32 @@ from pymodbus.constants import Endian
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("modbus-sim")
+
+
+async def _handle_health_check(reader, writer):
+    try:
+        await reader.read(1024)
+        body = b"OK"
+        writer.write(
+            b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: "
+            + str(len(body)).encode() + b"\r\nConnection: close\r\n\r\n" + body
+        )
+        await writer.drain()
+    except Exception:
+        pass
+    writer.close()
+
+
+async def _run_health_server():
+    # Some PaaS free tiers (e.g. Render) only offer the "Web Service" type,
+    # which requires an HTTP port to consider the service "live" - raw
+    # Modbus TCP on :502 doesn't satisfy that check on its own. Harmless
+    # locally: nothing publishes or depends on this port there.
+    port = int(os.environ.get("PORT", "8080"))
+    server = await asyncio.start_server(_handle_health_check, "0.0.0.0", port)
+    log.info("Health-check listener on :%d (for PaaS deployments only)", port)
+    async with server:
+        await server.serve_forever()
 
 
 async def simulate_values(context: ModbusServerContext):
@@ -62,6 +89,7 @@ async def main():
     )
     context = ModbusServerContext(slaves=store, single=True)
     asyncio.create_task(simulate_values(context))
+    asyncio.create_task(_run_health_server())
     log.info("Modbus TCP simulator listening on 0.0.0.0:502")
     await StartAsyncTcpServer(context=context, address=("0.0.0.0", 502))
 
