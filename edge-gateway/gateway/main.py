@@ -53,7 +53,7 @@ class Gateway:
         self.connectors: dict[str, object] = {}
 
     async def fetch_config(self) -> list[dict]:
-        async with httpx.AsyncClient(timeout=10) as client:
+        async with httpx.AsyncClient(timeout=25) as client:
             resp = await client.get(f"{BACKEND_URL}/api/gateways/{GATEWAY_ID}/config")
             resp.raise_for_status()
             return resp.json()["devices"]
@@ -91,8 +91,8 @@ class Gateway:
             try:
                 devices = await self.fetch_config()
                 await self.reconcile(devices)
-            except Exception as exc:
-                log.warning("Config fetch from backend failed: %s", exc)
+            except Exception:
+                log.exception("Config fetch from backend failed")
             await asyncio.sleep(CONFIG_POLL_SECONDS)
 
     async def publish(self, topic: str, payload: dict):

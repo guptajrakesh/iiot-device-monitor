@@ -1,83 +1,16 @@
 services:
+  # Everything in one container: Render's free plan only offers the Web
+  # Service type, and (confirmed via a live deploy) short internal hostnames
+  # don't resolve between separate Web Services on that plan - there's no
+  # usable private network to split this across services the way local
+  # docker-compose does. See render/entrypoint.sh for how the pieces run as
+  # sibling processes talking over localhost instead.
   - type: web
-    name: iiot-backend
-    runtime: python
+    name: iiot-device-monitor
+    runtime: docker
     plan: free
-    rootDir: backend
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    dockerfilePath: render/Dockerfile
+    dockerContext: .
     envVars:
       - key: DATABASE_URL
         sync: false # paste your Timescale Cloud connection string here
-      - key: MQTT_HOST
-        fromService:
-          name: iiot-mosquitto
-          type: web
-          property: host
-      - key: MQTT_PORT
-        value: "1883"
-      - key: MODBUS_SIM_HOST
-        fromService:
-          name: iiot-modbus-sim
-          type: web
-          property: host
-      - key: OPCUA_SIM_HOST
-        fromService:
-          name: iiot-opcua-sim
-          type: web
-          property: host
-
-  # Render's free plan doesn't support Private Services, so these three run
-  # as Web Services instead - reachable internally the same way, but also
-  # getting a public URL as a side effect (low real risk: mosquitto here has
-  # no data worth protecting, and the two sims just emit fake drifting numbers).
-  - type: web
-    name: iiot-mosquitto
-    runtime: docker
-    plan: free
-    dockerfilePath: mosquitto/Dockerfile.cloud
-    dockerContext: mosquitto
-
-  - type: web
-    name: iiot-modbus-sim
-    runtime: docker
-    plan: free
-    dockerfilePath: simulators/modbus_sim/Dockerfile
-    dockerContext: simulators/modbus_sim
-
-  - type: web
-    name: iiot-opcua-sim
-    runtime: docker
-    plan: free
-    dockerfilePath: simulators/opcua_sim/Dockerfile
-    dockerContext: simulators/opcua_sim
-
-  # Also a Web Service, not a Background Worker, for the same free-plan
-  # reason as above - it has nothing to actually serve, so gateway/main.py
-  # runs a trivial health-check listener on $PORT purely for Render's benefit.
-  - type: web
-    name: iiot-edge-gateway
-    runtime: docker
-    plan: free
-    dockerfilePath: edge-gateway/Dockerfile
-    dockerContext: edge-gateway
-    envVars:
-      - key: GATEWAY_ID
-        value: edge-gateway-1
-      - key: BACKEND_HOST
-        fromService:
-          name: iiot-backend
-          type: web
-          property: host
-      - key: BACKEND_PORT
-        fromService:
-          name: iiot-backend
-          type: web
-          property: port
-      - key: MQTT_HOST
-        fromService:
-          name: iiot-mosquitto
-          type: web
-          property: host
-      - key: MQTT_PORT
-        value: "1883"

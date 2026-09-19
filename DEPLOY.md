@@ -1,10 +1,16 @@
 # Deploying to Render (free tier)
 
-This deploys the whole stack — backend, MQTT broker, both simulators, and the edge gateway — as
-separate free-tier services on [Render](https://render.com), backed by a free
-[Timescale Cloud](https://console.cloud.timescale.com) database. Same pattern as this org's other
-project (a single web service + an external managed Postgres), just split across more services since
-this app has more moving parts.
+This deploys the whole stack as **one** Render Web Service — backend, MQTT broker, both simulators,
+and the edge gateway all run as sibling processes inside a single container, talking to each other over
+`localhost` (see `render/entrypoint.sh`). It's backed by a free
+[Timescale Cloud](https://console.cloud.timescale.com) database, same pattern as this org's other
+project (a single web service + an external managed Postgres).
+
+This single-container design isn't the original plan — it's the result of hitting three Render free-plan
+limits in a row while deploying this for real: Private Services aren't available on the free plan,
+neither are Background Workers, and (confirmed by an actual failed deploy) short internal hostnames
+like `iiot-mosquitto` don't resolve between separate free-plan Web Services at all. Bundling everything
+into one container sidesteps all three at once, since nothing needs to cross a service boundary.
 
 **No credit card should be required for either signup**, based on current public info as of this
 writing — Timescale Cloud's free trial/Beta plan explicitly doesn't ask for one, and Render's free
@@ -13,30 +19,15 @@ stop and don't enter them** — come back here and we'll figure out an alternati
 
 ## What you'll end up with
 
-| Render service | Type | What it is |
-|---|---|---|
-| `iiot-backend` | Web Service | The API + dashboard — this is the URL you'll actually visit |
-| `iiot-mosquitto` | Web Service | MQTT broker (plaintext — see note below) |
-| `iiot-modbus-sim` | Web Service | Fake Modbus device |
-| `iiot-opcua-sim` | Web Service | Fake OPC-UA device |
-| `iiot-edge-gateway` | Web Service | Polls the simulators, publishes to MQTT (nothing real to serve — see note below) |
+One Render service, `iiot-device-monitor` (Web Service, Docker runtime) — its URL is the dashboard you
+visit. The database lives outside Render entirely, on Timescale Cloud.
 
-The database lives outside Render entirely, on Timescale Cloud.
-
-**Note on security**: Render's free plan supports only the Web Service type — no Private Services and
-no Background Workers — so `iiot-mosquitto`, `iiot-modbus-sim`, `iiot-opcua-sim`, and
-`iiot-edge-gateway` all run as Web Services regardless of what they actually do, each getting a public
-URL as a side effect (the gateway's "web" presence is just a trivial health-check listener added
-purely for this; it has nothing real to serve). In practice this is low real risk: mosquitto here holds
-no data worth protecting and the two simulators just emit fake drifting numbers, but it's worth knowing
-they're technically public, not sealed off. The MQTT broker also runs without TLS
-(`mosquitto/Dockerfile.cloud`), unlike local `docker compose up`'s TLS-encrypted broker — a deliberate
-simplification for this deployment target.
-
-Separately, and more importantly: **this app has no authentication anywhere**. The backend's URL,
-once deployed, is a normal public web address with zero login — anyone who has the link can
-onboard/delete devices, read all data, and change alert rules. Don't put anything sensitive behind it,
-and treat the link as effectively public.
+**Note on security**: MQTT never leaves the container in this design, so it's plaintext internally
+(`mosquitto/config/mosquitto.cloud.conf`) rather than TLS-encrypted like local `docker compose up`'s
+broker — there's no network hop between services here for TLS to protect. Separately, and more
+importantly: **this app has no authentication anywhere**. The backend's URL, once deployed, is a normal
+public web address with zero login — anyone who has the link can onboard/delete devices, read all data,
+and change alert rules. Don't put anything sensitive behind it, and treat the link as effectively public.
 
 ## Steps
 
@@ -46,35 +37,37 @@ and treat the link as effectively public.
 2. Create a new service (the default Postgres + TimescaleDB service is fine on the free/trial plan).
 3. Copy its connection string — it looks like
    `postgresql://tsdbadmin:PASSWORD@HOST.tsdb.cloud.timescale.com:PORT/tsdb?sslmode=require`.
-   Keep this handy for step 3.
+   Keep this handy for step 3. **Change `postgres://` to `postgresql+psycopg2://`** — SQLAlchemy (which
+   the backend uses) doesn't accept the shorter `postgres://` scheme some tools generate.
 
 ### 2. Push this Blueprint to Render
 
 1. Go to [dashboard.render.com](https://dashboard.render.com), sign up if you haven't, and choose
    **New > Blueprint**.
-2. Connect your GitHub account and pick the `iiot-device-monitor` repo. Render will detect
-   `render.yaml` at the repo root and show the five services listed above.
-3. Click **Apply** — Render will start building all five. This takes a few minutes the first time.
+2. Connect your GitHub account and pick the `iiot-device-monitor` repo (if it's not listed, its GitHub
+   App installation likely needs to be given access to that repo specifically — GitHub → Settings →
+   Applications → Installed GitHub Apps → Render → Configure → add the repo).
+3. Render will detect `render.yaml` and show one service, `iiot-device-monitor`, plus a field for
+   `DATABASE_URL`.
+4. Paste your (corrected, `postgresql+psycopg2://`) Timescale Cloud connection string into that field.
+5. Click **Deploy Blueprint**. The first build takes a few minutes (installing mosquitto plus every
+   Python service's dependencies in one image).
 
-### 3. Add the one secret Render can't infer
+### 3. Verify
 
-`iiot-backend`'s `DATABASE_URL` is intentionally left blank in `render.yaml` (`sync: false`) — same
-reason PMSDMS leaves its Neon connection string blank: it's a secret, not something to commit.
+Once it shows "Live", open its URL (shown at the top of the service's dashboard page, something like
+`https://iiot-device-monitor-xxxx.onrender.com`). You should see the same dashboard as local dev, with
+the two simulated devices streaming live data within a minute or so of the container finishing startup.
 
-1. In Render's dashboard, open the `iiot-backend` service → **Environment**.
-2. Paste your Timescale Cloud connection string from step 1 into `DATABASE_URL`.
-3. Save — this triggers a redeploy of just that service.
+If it's not updating, check the service's **Logs** tab — the backend, gateway, and both simulators all
+log to the same combined stream there, prefixed by their own logger names (`edge-gateway`, `modbus-sim`,
+`opcua-sim`, `mqtt-ingest`, etc.), so it's usually clear which piece is complaining.
 
-### 4. Verify
-
-Once all five services show "Live" in Render's dashboard, open `iiot-backend`'s URL (shown at the top
-of its dashboard page, something like `https://iiot-backend-xxxx.onrender.com`). You should see the
-same dashboard as local dev, with the two simulated devices streaming live data within a minute or two
-(the edge gateway polls for its device config every 15s, same as local).
-
-If it's not updating: check `iiot-edge-gateway`'s logs first (Render's dashboard → that service →
-**Logs**) — most first-deploy issues are a service-to-service hostname not resolving yet, which
-usually clears up on its own within a minute of all services finishing their first boot.
+**Free-tier cold starts**: the instance spins down after ~15 minutes of no incoming HTTP requests, which
+also pauses every process inside it (the simulators, the gateway, all of it) since they all share the
+one container's lifecycle. Visiting the URL wakes it back up (can take 30-60s), and data resumes
+shortly after. An external uptime pinger (e.g. a free [UptimeRobot](https://uptimerobot.com) check
+hitting the URL every 10 minutes) is the usual free-tier workaround if you want it to stay warm.
 
 ## Updating the deployment later
 

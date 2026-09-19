@@ -1,6 +1,0 @@
-FROM eclipse-mosquitto:2
-RUN apk add --no-cache python3
-COPY config/mosquitto.cloud.conf /mosquitto/config/mosquitto.conf
-COPY entrypoint.cloud.sh /entrypoint.cloud.sh
-RUN chmod +x /entrypoint.cloud.sh
-ENTRYPOINT ["/entrypoint.cloud.sh"]
