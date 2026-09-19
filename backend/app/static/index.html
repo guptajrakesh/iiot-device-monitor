@@ -546,7 +546,10 @@ function renderAlertBanner() {
 }
 
 function connectWs() {
-  const ws = new WebSocket(`ws://${location.host}/ws/live`);
+  // An HTTPS page (e.g. deployed on Render) can only open a wss:// socket -
+  // ws:// is blocked as mixed content and silently fails to ever connect.
+  const wsProtocol = location.protocol === "https:" ? "wss:" : "ws:";
+  const ws = new WebSocket(`${wsProtocol}//${location.host}/ws/live`);
   ws.onopen = () => setLivePillConnected(true);
   ws.onmessage = (evt) => {
     const msg = JSON.parse(evt.data);
